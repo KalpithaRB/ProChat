@@ -80,3 +80,6 @@
 ```bash
 git clone https://github.com/KalpithaRB/ProChat
 cd ProChat
+Open the project in Android Studio.
+Allow Gradle to sync and resolve dependencies.
+Run the app on your device or emulator.
