@@ -2,6 +2,7 @@ package com.kalpi.prochat.ui.chat
 
 
 import com.kalpi.prochat.data.ChatMessage
+import com.kalpi.prochat.data.ChatItem
 
 /**
  * Represents the different states the ChatScreen can be in.
@@ -18,7 +19,7 @@ sealed interface ChatUiState { // Using sealed interface for modern Kotlin
      * Represents the state where chat messages are successfully loaded and ready to be displayed.
      * @property messages The list of [ChatMessage] objects to display.
      */
-    data class Content(val messages: List<ChatMessage>) : ChatUiState
+    data class Content(val messages: List<ChatItem>) : ChatUiState
 
     /**
      * Represents an error state, typically shown if fetching messages fails.

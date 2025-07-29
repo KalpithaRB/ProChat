@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
 import java.util.*
+import com.kalpi.prochat.data.ChatItem
 
 
 /**
@@ -131,19 +134,66 @@ fun ChatScreen(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp) // Spacing between messages
+                            //verticalArrangement = Arrangement.spacedBy(8.dp) // Spacing between messages
                         ) {
-                            items(state.messages, key = { it.id }) { message ->
-                                MessageBubble(
-                                    message = message,
-                                    currentUserId = ChatViewModel.CURRENT_USER_ID
-                                )
+                            items(
+                                items = state.messages, // Use state.items
+                                key = { chatItem -> // Unique key for each item
+                                    when (chatItem) {
+                                        is ChatItem.Message -> chatItem.message.id
+                                        is ChatItem.DateSeparator -> chatItem.timestamp.toString() // Use timestamp for key
+                                    }
+                                },
+                                contentType = { chatItem -> // For performance with different item types
+                                    when (chatItem) {
+                                        is ChatItem.Message -> "message"
+                                        is ChatItem.DateSeparator -> "separator"
+                                    }
+                                }
+                            ){ chatItem ->
+                                when (chatItem) {
+                                    is ChatItem.Message -> {
+                                        MessageBubble(
+                                            message = chatItem.message,
+                                            currentUserId = ChatViewModel.CURRENT_USER_ID
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp)) // Add spacing after each message
+                                    }
+                                    is ChatItem.DateSeparator -> {
+                                        DateSeparatorItem(text = chatItem.displayDate)
+                                        Spacer(modifier = Modifier.height(8.dp)) // Add spacing after each separator
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+
+@Composable
+fun DateSeparatorItem(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 16.dp), // More padding for separators
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall, // Or bodySmall
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f), // Subtle background
+                    RoundedCornerShape(12.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        )
     }
 }
 
