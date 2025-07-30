@@ -2,15 +2,21 @@ package com.kalpi.prochat.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kalpi.prochat.data.ChatRepository
+import com.kalpi.prochat.data.ChatItem
 import com.kalpi.prochat.data.ChatMessage
+import com.kalpi.prochat.data.MessageStatus
 import com.kalpi.prochat.data.MessageType
+import com.kalpi.prochat.ui.chat.ChatUiState
 import com.kalpi.prochat.data.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import java.util.UUID // For generating unique IDs for dummy messages
 import java.text.SimpleDateFormat // Keep for MessageBubble timestamp
+import java.util.Calendar
 import java.util.Locale         // Keep for MessageBubble timestamp
 import java.util.Date
 
@@ -25,8 +31,10 @@ import java.util.Date
  * In later stages, it will interact with a data source (e.g., Firebase) to fetch and send messages.
  */
 
-class ChatViewModel : ViewModel() {
-
+class ChatViewModel (
+    private val chatRepository: ChatRepository, // Injected
+    private val currentRoomId: String
+): ViewModel() {
     // A simple way to distinguish the "current user" for dummy data styling.
     // In a real app, this would come from an authentication service.
     companion object {
@@ -42,9 +50,12 @@ class ChatViewModel : ViewModel() {
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    private val _tempMessageStore = MutableStateFlow<List<ChatMessage>>(emptyList())
 
     init {
-        loadDummyMessagesWithSeparators()
+        //i am keeping this screen empty and removed the dummy data
+        // and the new msgs will be getting appended as they are sent.
+        processMessagesAndUpdateState(emptyList())
     }
 
     /**
@@ -52,98 +63,116 @@ class ChatViewModel : ViewModel() {
      * In a real app, this would involve fetching data from a repository or data source.
      * For Day 1, it populates the state with a predefined list of dummy messages.
      */
-    private fun loadDummyMessagesWithSeparators() {
+
+
+    // Sending a message
+    // --- Message Sending Logic ---
+    fun sendMessage(text: String) {
+        if (text.isBlank()) return // Don't send empty messages
+
+        val newMessage = ChatMessage(
+            id = UUID.randomUUID().toString(), // Client-generated unique ID
+            senderId = CURRENT_USER_ID,
+            text = text.trim(),
+            clientTimestamp = System.currentTimeMillis(),
+            messageType = MessageType.USER,
+            status = MessageStatus.SENDING, // Initial status
+            roomId = currentRoomId
+        )
+
+        // Add to local list immediately for UI update
+        val updatedMessages = _tempMessageStore.value + newMessage
+        _tempMessageStore.value = updatedMessages
+        processMessagesAndUpdateState(updatedMessages)
+
+
         viewModelScope.launch {
-            // Simulate a small delay for loading, can be removed if not desired
-            // kotlinx.coroutines.delay(500)
+            val result = chatRepository.sendMessage(currentRoomId, newMessage)
+            val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
 
-            val rawMessages = listOf(
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = OTHER_USER_ID,
-                    text = "Hey, how are you doing today?",
-                    timestamp = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = CURRENT_USER_ID,
-                    text = "I'm good, thanks! Just working on this cool chat app. You?",
-                    timestamp = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000 + 10000, // 2 days ago
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = OTHER_USER_ID,
-                    text = "Oh nice! Sounds interesting. What features are you building?",
-                    timestamp = System.currentTimeMillis() - 1 * 24 * 60 * 60 * 1000, // Yesterday
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = CURRENT_USER_ID,
-                    text = "Right now, just the basic UI layout with message bubbles and an input field. Trying to make it look polished!",
-                    timestamp = System.currentTimeMillis() - 1 * 24 * 60 * 60 * 1000 + 5000, // Yesterday + 5s
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = OTHER_USER_ID,
-                    text = "Hey, how are you doing today?",
-                    timestamp = System.currentTimeMillis() - 100000,
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = CURRENT_USER_ID,
-                    text = "I'm good, thanks! Just working on this cool chat app. You?",
-                    timestamp = System.currentTimeMillis() - 80000,
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = OTHER_USER_ID,
-                    text = "Oh nice! Sounds interesting. What features are you building?",
-                    timestamp = System.currentTimeMillis() - 60000,
-                    messageType = MessageType.USER
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = "system",
-                    text = "Alice has joined the chat.",
-                    timestamp = System.currentTimeMillis() - 30000,
-                    messageType = MessageType.SYSTEM
-                ),
-                ChatMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderId = OTHER_USER_ID,
-                    text = "Cool! Keep it up!",
-                    timestamp = System.currentTimeMillis() - 20000,
-                    messageType = MessageType.USER
-                )
-            ).sortedBy { it.timestamp } // Ensure messages are sorted by time
-            val processedChatItems = mutableListOf<ChatItem>()
-            var lastDateTimestamp: Long? = null
-
-            for (message in rawMessages) {
-                if (lastDateTimestamp == null || !isSameDay(message.timestamp, lastDateTimestamp)) {
-                    processedChatItems.add(
-                        ChatItem.DateSeparator(
-                            displayDate = formatDateSeparator(message.timestamp),
-                            timestamp = message.timestamp // Use message timestamp for sorting/key
-                        )
-                    )
-                    lastDateTimestamp = message.timestamp
+            // Update the status of the message in our local store
+            val messagesAfterSendAttempt = _tempMessageStore.value.map {
+                if (it.id == newMessage.id) {
+                    it.copy(status = finalStatus) // Assuming ChatMessage.status is var or copy creates new
+                } else {
+                    it
                 }
-                processedChatItems.add(ChatItem.Message(message))
             }
-            _uiState.value = ChatUiState.Content(processedChatItems)
+            _tempMessageStore.value = messagesAfterSendAttempt
+            processMessagesAndUpdateState(messagesAfterSendAttempt)
         }
     }
 
-    // Placeholder for Day 2: Sending a message
-    // fun sendMessage(text: String) {
-    //     // Logic to create a new ChatMessage and update Firebase/local list
-    //     // For now, could just add to a local list and update _uiState
-    // }
+    fun retrySendMessage(failedMessage: ChatMessage) {
+        if (failedMessage.status != MessageStatus.FAILED) return // Only retry failed messages
+
+        // Optimistically update status to SENDING again
+        val messagesWithRetry = _tempMessageStore.value.map {
+            if (it.id == failedMessage.id) {
+                it.copy(status = MessageStatus.SENDING)
+            } else {
+                it
+            }
+        }
+        _tempMessageStore.value = messagesWithRetry
+        processMessagesAndUpdateState(messagesWithRetry)
+
+        viewModelScope.launch {
+            // Use the original failedMessage object, as its ID is what matters for Firestore document path
+            val result = chatRepository.sendMessage(failedMessage.roomId, failedMessage.copy(status = MessageStatus.SENDING))
+            val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
+
+            val messagesAfterRetryAttempt = _tempMessageStore.value.map {
+                if (it.id == failedMessage.id) {
+                    it.copy(status = finalStatus)
+                } else {
+                    it
+                }
+            }
+            _tempMessageStore.value = messagesAfterRetryAttempt
+            processMessagesAndUpdateState(messagesAfterRetryAttempt)
+        }
+    }
+
+
+    // --- Helper function to process messages and update UI state (from Day 1) ---
+    private fun processMessagesAndUpdateState(messages: List<ChatMessage>) {
+        if (messages.isEmpty() && uiState.value is ChatUiState.Loading) { // Handle initial empty state
+            _uiState.value = ChatUiState.Content(emptyList()) // Or keep Loading if you prefer
+            return
+        }
+
+        val sortedMessages = messages.sortedBy { it.clientTimestamp } // Sort by client timestamp for now
+        val chatItems = mutableListOf<ChatItem>()
+        var lastDateHeaderTimestamp: Long? = null
+
+        sortedMessages.forEach { message ->
+            val messageCalendar = Calendar.getInstance().apply { timeInMillis = message.clientTimestamp }
+            if (lastDateHeaderTimestamp == null || !isSameDay(message.clientTimestamp, lastDateHeaderTimestamp!!)) {
+                chatItems.add(ChatItem.DateSeparator(formatDateSeparator(message.clientTimestamp), message.clientTimestamp))
+                lastDateHeaderTimestamp = message.clientTimestamp
+            }
+            chatItems.add(ChatItem.Message(message))
+        }
+        _uiState.value = ChatUiState.Content(chatItems)
+    }
+    // --- Date Formatting Helpers (from Day 1) ---
+    private fun isSameDay(timestamp1: Long, timestamp2: Long): Boolean {
+        val cal1 = Calendar.getInstance().apply { timeInMillis = timestamp1 }
+        val cal2 = Calendar.getInstance().apply { timeInMillis = timestamp2 }
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+                cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+    }
+
+    private fun formatDateSeparator(timestamp: Long): String {
+        val messageDate = Calendar.getInstance().apply { timeInMillis = timestamp }
+        val today = Calendar.getInstance()
+        val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+
+        return when {
+            isSameDay(timestamp, today.timeInMillis) -> "Today"
+            isSameDay(timestamp, yesterday.timeInMillis) -> "Yesterday"
+            else -> SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
+        }
+    }
 }

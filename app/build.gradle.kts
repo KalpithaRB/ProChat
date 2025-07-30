@@ -1,7 +1,11 @@
+
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
+
 }
 
 android {
@@ -57,13 +61,21 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
-    // ViewModel Compose (we'll need this soon for state management)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.2") // Or latest stable
+    // ViewModel Compose
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-    // Navigation Compose (we'll need this for navigating between chat list and chat screen)
-    implementation("androidx.navigation:navigation-compose:2.9.2") // Or latest stable
+    // Navigation Compose
+    implementation(libs.androidx.navigation.compose)
 
-    // Icons - Extended (optional, but often useful for more icons)
-    implementation("androidx.compose.material:material-icons-extended")
+    // Icons - Extended
+    implementation(libs.androidx.compose.material.iconsExtended) // Corrected alias based on typical naming
+
+    implementation(platform(libs.firebase.bom))
+
+    // Implement individual Firebase libraries (BoM manages their versions)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.messaging)
+
 
 }

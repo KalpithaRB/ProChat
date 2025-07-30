@@ -3,13 +3,34 @@ package com.kalpi.prochat.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Error // For FAILED state
+import androidx.compose.material.icons.filled.Refresh // For FAILED state retry
+import androidx.compose.material.icons.outlined.CheckCircle // For SENT state (optional)
+import androidx.compose.material.icons.outlined.Schedule // For SENDING state
+import androidx.compose.material3.CircularProgressIndicator // Can also use for SENDING
+import androidx.compose.material3.Icon
 import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -29,6 +50,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel // For viewModel()
 import com.kalpi.prochat.data.ChatMessage
 import com.kalpi.prochat.data.MessageType
+import com.kalpi.prochat.data.MessageStatus
+import com.kalpi.prochat.ui.chat.ChatViewModel
 import com.kalpi.prochat.ui.theme.ProChatTheme // Assuming your theme is named ProChatTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,7 +74,8 @@ import com.kalpi.prochat.data.ChatItem
 fun ChatScreen(
     // We can allow providing a specific recipient name if needed later for the TopAppBar
     // recipientName: String = "Chat User",
-    chatViewModel: ChatViewModel = viewModel() // Uses the default ViewModel factory
+    modifier: Modifier = Modifier,
+    chatViewModel: ChatViewModel // Uses the default ViewModel factory
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState() // For auto-scrolling
@@ -89,16 +113,7 @@ fun ChatScreen(
         },
         bottomBar = {
             ChatInput(
-                textState = textState,
-                onTextChanged = { textState = it },
-                onSendClick = {
-                    if (textState.text.isNotBlank()) {
-                        // For Day 1, we'll just clear the input.
-                        // Day 2: chatViewModel.sendMessage(textState.text)
-                        // Log.d("ChatScreen", "Send clicked: ${textState.text}")
-                        textState = TextFieldValue("") // Clear input after "send"
-                    }
-                }
+                chatViewModel = chatViewModel
             )
         }
     ) { innerPadding ->
@@ -155,7 +170,10 @@ fun ChatScreen(
                                     is ChatItem.Message -> {
                                         MessageBubble(
                                             message = chatItem.message,
-                                            currentUserId = ChatViewModel.CURRENT_USER_ID
+                                            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or however you get current user ID
+                                            onRetryClick = { messageToRetry -> // Add this lambda
+                                                chatViewModel.retrySendMessage(messageToRetry)
+                                            }
                                         )
                                         Spacer(modifier = Modifier.height(8.dp)) // Add spacing after each message
                                     }
@@ -209,7 +227,8 @@ fun DateSeparatorItem(text: String) {
 @Composable
 fun MessageBubble(
     message: ChatMessage,
-    currentUserId: String
+    currentUserId: String,
+    onRetryClick: (ChatMessage) -> Unit // Lambda to handle retry
 ) {
     val isCurrentUser = message.senderId == currentUserId
     val bubbleContainerAlignment  = if (isCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
@@ -221,68 +240,97 @@ fun MessageBubble(
 
     // For timestamp formatting
     val simpleDateFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
-    val formattedTime = remember(message.timestamp) {
-        simpleDateFormat.format(Date(message.timestamp))
+    val formattedTime = remember(message.clientTimestamp) {
+        simpleDateFormat.format(Date(message.clientTimestamp))
     }
+    // Adjust opacity for SENDING state
+    val bubbleAlpha = if (message.status == MessageStatus.SENDING) 0.7f else 1.0f
+
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
                 start = if (isCurrentUser) 64.dp else 0.dp, // Indent opposite side
-                end = if (isCurrentUser) 0.dp else 64.dp    // Indent opposite side
-            ),
+                end = if (isCurrentUser) 0.dp else 64.dp,   // Indent opposite side
+                top = 2.dp,
+                bottom = 2.dp
+            ).alpha(bubbleAlpha),
         contentAlignment = bubbleContainerAlignment // This aligns the content (bubble) within the Column
     ) {
-        Column {
-        if (message.messageType == MessageType.SYSTEM) {
-            // System Message Styling
-            Text(
-                text = message.text,
-                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(vertical = 8.dp, horizontal = 16.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-        } else {
-            // User Message Bubble
-            Box(
-                modifier = Modifier
-                    // .wrapContentWidth() // Let the bubble size to its content
-                    .clip(
-                        RoundedCornerShape( // Dynamic corner rounding
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isCurrentUser) 16.dp else 4.dp,
-                            bottomEnd = if (isCurrentUser) 4.dp else 16.dp
+        Row(verticalAlignment = Alignment.Bottom) {
+            // For "other user" messages, status icon could be on the left (optional)
+             if (!isCurrentUser && message.status == MessageStatus.FAILED) {
+                 Icon(
+                     imageVector = Icons.Filled.Error,
+                     contentDescription = "Message failed",
+                     tint = MaterialTheme.colorScheme.error,
+                     modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                 )
+             }
+            Column {
+            if (message.messageType == MessageType.SYSTEM) {
+                // System Message Styling
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(vertical = 8.dp, horizontal = 16.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
                         )
-                    )
-                    .background(bubbleColor)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Column { // To stack text and timestamp vertically
-                    Text(
-                        text = message.text,
-                        color = textColor,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = formattedTime,
-                        color = textColor.copy(alpha = 0.7f), // Slightly muted timestamp
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.End) // Timestamp to the right within the bubble
-                    )
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            } else {
+                // User Message Bubble
+                Box(
+                    modifier = Modifier
+                        // .wrapContentWidth() // Let the bubble size to its content
+                        .clip(
+                            RoundedCornerShape( // Dynamic corner rounding
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomStart = if (isCurrentUser) 16.dp else 4.dp,
+                                bottomEnd = if (isCurrentUser) 4.dp else 16.dp
+                            )
+                        )
+                        //.background(bubbleColor)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Column { // To stack text and timestamp vertically
+                        Text(
+                            text = message.text,
+                            color = textColor,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(Modifier.height(4.dp))
+
+                        Row(
+                            modifier = Modifier.align(Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = formattedTime,
+                                color = textColor.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            // Status Icon for current user messages, shown to the right of timestamp
+                            if (isCurrentUser) {
+                                Spacer(Modifier.width(4.dp))
+                                MessageStatusIcon(
+                                    status = message.status,
+                                    onRetry = { onRetryClick(message) },
+                                    isCurrentUser = true
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
-    }
-} }
+} }}
 
 
 /**
@@ -340,6 +388,48 @@ fun ChatInput(
         }
     }
 }
+
+@Composable
+fun MessageStatusIcon(
+    status: MessageStatus,
+    onRetry: () -> Unit,
+    isCurrentUser: Boolean // To potentially adjust icon color or style
+) {
+    val iconSize = 16.dp
+    when (status) {
+        MessageStatus.SENDING -> {
+            Icon(
+                imageVector = Icons.Outlined.Schedule,
+                contentDescription = "Sending message",
+                modifier = Modifier.size(iconSize),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+            // Or use a small CircularProgressIndicator:
+            // CircularProgressIndicator(modifier = Modifier.size(iconSize), strokeWidth = 1.5.dp)
+        }
+        MessageStatus.SENT -> {
+            // Optionally show a "sent" tick, or nothing for a cleaner look
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle, // Or a single tick
+                contentDescription = "Message sent",
+                modifier = Modifier.size(iconSize),
+                tint = MaterialTheme.colorScheme.secondary // Or a more subtle color
+            )
+        }
+        MessageStatus.FAILED -> {
+            Icon(
+                imageVector = Icons.Filled.Error, // Or Icons.Filled.Refresh to imply retry directly
+                contentDescription = "Message failed, tap to retry",
+                modifier = Modifier
+                    .size(iconSize)
+                    .clickable(onClick = onRetry),
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+
 // A simplified ViewModel for preview purposes, or use a fake/mocking library for more complex scenarios
 //class PreviewChatViewModel(initialState: ChatUiState = ChatUiState.Loading) :
 //    ViewModel(),{
@@ -392,12 +482,14 @@ fun MessageBubbleSentPreview() {
                 id = "1",
                 senderId = ChatViewModel.CURRENT_USER_ID,
                 text = "This is a sent message example. It can be quite long to test wrapping.",
-                timestamp = System.currentTimeMillis()
+                // clientTimestamp = System.currentTimeMillis()
             ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID
+            currentUserId = ChatViewModel.CURRENT_USER_ID,
+            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
         )
     }
 }
+
 
 @Preview(showBackground = true, name = "Message Bubble Received")
 @Composable
@@ -406,11 +498,13 @@ fun MessageBubbleReceivedPreview() {
         MessageBubble(
             message = ChatMessage(
                 id = "2",
-                senderId = ChatViewModel.OTHER_USER_ID,
+                senderId = ChatViewModel.OTHER_USER_ID, // Make sure OTHER_USER_ID is defined or use a string
                 text = "This is a received message! Shorter this time.",
-                timestamp = System.currentTimeMillis()
+                // clientTimestamp = System.currentTimeMillis() // Assuming your ChatMessage constructor uses this
+                // If your constructor still has 'timestamp', adjust accordingly or update ChatMessage
             ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID
+            currentUserId = ChatViewModel.CURRENT_USER_ID,
+            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
         )
     }
 }
@@ -425,11 +519,11 @@ fun SystemMessagePreview() {
                 id = "system1",
                 senderId = "system", // Or your system sender ID
                 text = "User Has Joined The Chat",
-                timestamp = System.currentTimeMillis(),
+                // clientTimestamp = System.currentTimeMillis(),
                 messageType = MessageType.SYSTEM
             ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID
+            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or a dummy ID for system messages
+            onRetryClick = { /* Preview: No action needed for retry, system messages might not fail/retry */ } // Add this
         )
     }
 }
-// endregion

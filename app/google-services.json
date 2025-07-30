@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "868470597430",
+    "project_id": "chatapp-36288",
+    "storage_bucket": "chatapp-36288.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:868470597430:android:89b5caa7b8973b466c3597",
+        "android_client_info": {
+          "package_name": "com.kalpi.prochat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjLHM1eMe3LHwKRecVlymiViHVhKsyMbk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
