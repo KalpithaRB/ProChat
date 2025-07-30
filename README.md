@@ -6,7 +6,7 @@
 
 ---
 
-## ✨ Features Implemented (Day 1)
+## ✨ Features Implemented (Day 1 & Day 2)
 
 - **Chat Screen UI**
   - Scrollable message list using `LazyColumn`
@@ -26,14 +26,47 @@
 - **Dummy Data**
   - Messages are generated locally using hardcoded values
   - Includes a mix of user messages, system messages, and simulated time shifts
+ 
+  
+*   **Message Sending:** 
+    *   Users can type messages and send them. Messages are stored in Firebase Firestore.
+*   **Real-time UI Updates (Local):**
+    *   The UI immediately reflects a message being sent (e.g., with a clock icon).
+*   **Message Status Indicators:**
+    *   **Sending:** A clock icon indicates the message is currently being sent.
+    *   **Sent:** A tick mark confirms the message has been successfully saved to the server.
+    *   **Failed:** A red error icon ("!") appears if a message fails to send (e.g., due to network issues).
+*   **Retry Failed Messages:**
+    *   Users can tap on a failed message to attempt sending it again.
+*   **ViewModel & Repository Pattern:**
+    *   Business logic is separated using `ViewModel` for UI state and `Repository` for data operations with Firebase.
+*   **Basic Message Bubble Styling:**
+    *   Message bubbles are styled to distinguish between the current user's messages and messages from others. 
+*   **Chat Input:**
+    *   A dedicated input field with a send button that enables/disables based on whether there's text to send.
+
+  ---
+ 
+📌 Firebase Choice: Cloud Firestore
+
+Reasoning:
+
+🔍 Rich Queries: Enables future expansion (search, filtering)
+
+🚀 Scalability: Optimized for large datasets and multi-region deployments
+
+🧱 Structured Data Model: Document-collection mapping suits /chatrooms/{roomId}/messages/{messageId}
+
+📴 Robust Offline Support: Smooth experience during network disruptions
+
+🌍 Multi-region Replication: Improves latency for global users
+
 
 ---
 
 ## 🧱 MVVM Architecture Overview
 
 The app follows the **Model-View-ViewModel (MVVM)** pattern to ensure separation of concerns, modularity, and easier testing.
-
----
 
 ### 1. **Model Layer**
 
@@ -140,6 +173,14 @@ The ViewModel contains no direct references to UI components, making it testable
       
 ---
 
+Known Issues:
+
+🔓 Firestore rules are currently open for development (allow read, write: if true;). These will be secured in upcoming phases.
+
+⚠️ Real-time receiving of messages (addSnapshotListener) will be implemented in Day 3
+
+---
+
 ## 🚀 Running the App
 
 ### Prerequisites
@@ -149,10 +190,13 @@ The ViewModel contains no direct references to UI components, making it testable
 - Emulator or Android device (with USB debugging)
 
 ### Setup Steps
+* Clone the repository.
+* Ensure you have Android Studio installed.
+* **Firebase Setup:**
+    *   Create a Firebase project at [https://console.firebase.google.com/](https://console.firebase.google.com/).
+    *   Add an Android app to your Firebase project with the package name `<!-- com.kalpi.prochat -->`.
+    *   Download the `google-services.json` file from your Firebase project settings and place it in the `app/` directory of this Android Studio project.
+    *   In the Firebase console, enable **Firestore Database**. When prompted, create the database in **Native Mode** and choose a region. For initial testing, the default security rules (or temporarily open rules) can be used, as mentioned above.
+* Open the project in Android Studio.
+* Build and run the app on an emulator or physical device
 
-```bash
-git clone https://github.com/KalpithaRB/ProChat
-cd ProChat
-Open the project in Android Studio.
-Allow Gradle to sync and resolve dependencies.
-Run the app on your device or emulator.
