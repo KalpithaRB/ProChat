@@ -14,13 +14,20 @@ import androidx.compose.ui.platform.LocalContext
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
     secondary = PurpleGrey80,
-    tertiary = Pink80
+    tertiary = Pink80,
+    primaryContainer = Purple40, // Used by your old MessageBubble for current user
+    secondaryContainer = Pink40, // Used by your old MessageBubble for other user
+
 )
 
 private val LightColorScheme = lightColorScheme(
     primary = Purple40,
     secondary = PurpleGrey40,
-    tertiary = Pink40
+    tertiary = Pink40,
+    primaryContainer = Purple80, // Example: If you want lighter containers in light theme
+    secondaryContainer = Pink80,  // Example
+
+
 
     /* Other default colors to override
     background = Color(0xFFFFFBFE),

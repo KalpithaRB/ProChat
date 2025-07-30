@@ -296,7 +296,7 @@ fun MessageBubble(
                                 bottomEnd = if (isCurrentUser) 4.dp else 16.dp
                             )
                         )
-                        //.background(bubbleColor)
+                        .background(bubbleColor)
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Column { // To stack text and timestamp vertically
@@ -332,62 +332,6 @@ fun MessageBubble(
         }
 } }}
 
-
-/**
- * Composable for the chat input area, including a text field and a send button.
- *
- * @param textState The current [TextFieldValue] of the input field.
- * @param onTextChanged Callback when the text in the input field changes.
- * @param onSendClick Callback when the send button is clicked.
- */
-@Composable
-fun ChatInput(
-    textState: TextFieldValue,
-    onTextChanged: (TextFieldValue) -> Unit,
-    onSendClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shadowElevation = 4.dp // Add some elevation to distinguish from messages
-    ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 8.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = textState,
-                onValueChange = onTextChanged,
-                placeholder = { Text("Type a message...") },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors( // Using TextFieldDefaults.colors for M3
-                    focusedIndicatorColor = Color.Transparent, // No indicator line
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent
-                )
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = onSendClick,
-                enabled = textState.text.isNotBlank(),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Icon(
-                    Icons.Filled.Send,
-                    contentDescription = "Send message"
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun MessageStatusIcon(
