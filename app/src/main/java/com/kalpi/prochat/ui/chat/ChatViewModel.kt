@@ -7,18 +7,22 @@ import com.kalpi.prochat.data.ChatItem
 import com.kalpi.prochat.data.ChatMessage
 import com.kalpi.prochat.data.MessageStatus
 import com.kalpi.prochat.data.MessageType
-import com.kalpi.prochat.ui.chat.ChatUiState
+
 import com.kalpi.prochat.data.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.catch // For error handling on the flow
+import kotlinx.coroutines.flow.onStart // Optional: for indicating initial loading
+import kotlinx.coroutines.Job // To manage the listener job
 import kotlinx.coroutines.flow.update
 import java.util.UUID // For generating unique IDs for dummy messages
 import java.text.SimpleDateFormat // Keep for MessageBubble timestamp
 import java.util.Calendar
 import java.util.Locale         // Keep for MessageBubble timestamp
 import java.util.Date
+import android.util.Log
 
 
 /**
@@ -51,11 +55,12 @@ class ChatViewModel (
      */
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private val _tempMessageStore = MutableStateFlow<List<ChatMessage>>(emptyList())
-
+    private var messageListenerJob: Job? = null
     init {
         //i am keeping this screen empty and removed the dummy data
         // and the new msgs will be getting appended as they are sent.
         processMessagesAndUpdateState(emptyList())
+        listenToMessages(currentRoomId)
     }
 
     /**
@@ -80,57 +85,122 @@ class ChatViewModel (
             roomId = currentRoomId
         )
 
-        // Add to local list immediately for UI update
-        val updatedMessages = _tempMessageStore.value + newMessage
+        // Optimistically add to _tempMessageStore and update UI
+        val updatedMessages = (_tempMessageStore.value + newMessage).sortedBy { it.clientTimestamp }
         _tempMessageStore.value = updatedMessages
-        processMessagesAndUpdateState(updatedMessages)
+        processMessagesAndUpdateState(updatedMessages) // Update UI immediately
 
 
         viewModelScope.launch {
             val result = chatRepository.sendMessage(currentRoomId, newMessage)
             val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
 
-            // Update the status of the message in our local store
+            // Update the status in _tempMessageStore
+            // The listener might also pick this up, the distinctBy in collect should handle it.
             val messagesAfterSendAttempt = _tempMessageStore.value.map {
-                if (it.id == newMessage.id) {
-                    it.copy(status = finalStatus) // Assuming ChatMessage.status is var or copy creates new
-                } else {
-                    it
-                }
-            }
+                if (it.id == newMessage.id) it.copy(status = finalStatus) else it
+            }.sortedBy { it.clientTimestamp }
+
             _tempMessageStore.value = messagesAfterSendAttempt
-            processMessagesAndUpdateState(messagesAfterSendAttempt)
+            processMessagesAndUpdateState(messagesAfterSendAttempt) // Update UI with final status
+
+            if (result.isFailure) {
+                Log.e("ChatViewModel", "Failed to send message ID: ${newMessage.id}", result.exceptionOrNull())
+            }
         }
     }
+
+    private fun listenToMessages(roomId: String) {
+        messageListenerJob?.cancel() // Cancel previous listener if any
+        messageListenerJob = viewModelScope.launch {
+            chatRepository.getChatMessages(roomId)
+                .onStart {
+                    Log.d("ChatViewModel", "Starting to listen for messages in room: $roomId")
+                    // You might want to ensure UI is in Loading state or some indication
+                    // if _tempMessageStore is empty and _uiState is not already Content.
+                    // For now, processMessagesAndUpdateState(emptyList()) in init handles initial state.
+                }
+                .catch { exception ->
+                    Log.e("ChatViewModel", "Error listening to messages for room $roomId", exception)
+                    // Optionally update UI to show an error state
+                    // For example: _uiState.value = ChatUiState.Error("Failed to load messages: ${exception.message}")
+                    // Ensure your ChatUiState sealed class has an Error state if you do this.
+                }
+                .collect { newMessagesFromListener ->
+                    Log.d("ChatViewModel", "Received ${newMessagesFromListener.size} messages from listener for room $roomId")
+
+                    // Get current messages, especially those in SENDING state, from our temp store
+                    val currentLocalMessages = _tempMessageStore.value
+
+                    // Combine: Prioritize messages from the listener (source of truth).
+                    // If a message ID exists in both, the one from the listener is usually preferred.
+                    // However, for SENDING messages, we want to keep our local status until the listener
+                    // confirms it as SENT or it's updated by sendMessage completion.
+
+                    val combinedMessagesMap = mutableMapOf<String, ChatMessage>()
+
+                    // Add all current local messages
+                    for (msg in currentLocalMessages) {
+                        combinedMessagesMap[msg.id] = msg
+                    }
+                    // Add/replace with messages from the listener
+                    // If a message from listener has status SENT/FAILED, it overrides local SENDING.
+                    for (listenerMsg in newMessagesFromListener) {
+                        val localMsg = combinedMessagesMap[listenerMsg.id]
+                        if (localMsg != null && localMsg.status == MessageStatus.SENDING &&
+                            (listenerMsg.status == MessageStatus.SENT || listenerMsg.status == MessageStatus.FAILED)) {
+                            // Listener confirms a message that was locally SENDING
+                            combinedMessagesMap[listenerMsg.id] = listenerMsg
+                        } else if (localMsg == null) {
+                            // New message from listener not seen before
+                            combinedMessagesMap[listenerMsg.id] = listenerMsg
+                        }
+                        // If localMsg.status is already SENT/FAILED, and listenerMsg is the same, no change needed.
+                        // If listenerMsg is somehow older (e.g. status NONE), prefer local if more definitive.
+                        // This logic can get complex depending on how server timestamps and statuses are handled.
+                        // For now, simpler: listener's version usually wins if ID matches, unless local is SENDING.
+                        else if (localMsg.status != MessageStatus.SENDING) { // local is already SENT/FAILED
+                            combinedMessagesMap[listenerMsg.id] = listenerMsg // keep listener version
+                        }
+                        // else: local is SENDING, listener is also SENDING or NONE, keep local SENDING
+                    }
+
+
+                    val finalMessages = combinedMessagesMap.values.toList().sortedBy { it.clientTimestamp }
+
+                    _tempMessageStore.value = finalMessages
+                    processMessagesAndUpdateState(finalMessages)
+                }
+        }
+    }
+
 
     fun retrySendMessage(failedMessage: ChatMessage) {
         if (failedMessage.status != MessageStatus.FAILED) return // Only retry failed messages
 
-        // Optimistically update status to SENDING again
+        val messageToRetry = failedMessage.copy(status = MessageStatus.SENDING)
+
+        // Optimistically update status in _tempMessageStore
         val messagesWithRetry = _tempMessageStore.value.map {
-            if (it.id == failedMessage.id) {
-                it.copy(status = MessageStatus.SENDING)
-            } else {
-                it
-            }
-        }
+            if (it.id == failedMessage.id) messageToRetry else it
+        }.sortedBy { it.clientTimestamp }
         _tempMessageStore.value = messagesWithRetry
         processMessagesAndUpdateState(messagesWithRetry)
 
         viewModelScope.launch {
             // Use the original failedMessage object, as its ID is what matters for Firestore document path
-            val result = chatRepository.sendMessage(failedMessage.roomId, failedMessage.copy(status = MessageStatus.SENDING))
+            val result = chatRepository.sendMessage(messageToRetry.roomId, messageToRetry)
             val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
 
             val messagesAfterRetryAttempt = _tempMessageStore.value.map {
-                if (it.id == failedMessage.id) {
-                    it.copy(status = finalStatus)
-                } else {
-                    it
-                }
-            }
+                if (it.id == messageToRetry.id) it.copy(status = finalStatus) else it
+            }.sortedBy { it.clientTimestamp }
             _tempMessageStore.value = messagesAfterRetryAttempt
             processMessagesAndUpdateState(messagesAfterRetryAttempt)
+
+            if (result.isFailure) {
+                Log.e("ChatViewModel", "Failed to retry message ID: ${messageToRetry.id}", result.exceptionOrNull())
+            }
         }
     }
 
@@ -174,5 +244,11 @@ class ChatViewModel (
             isSameDay(timestamp, yesterday.timeInMillis) -> "Yesterday"
             else -> SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        messageListenerJob?.cancel()
+        Log.d("ChatViewModel", "ViewModel cleared, message listener job cancelled for room: $currentRoomId")
     }
 }
