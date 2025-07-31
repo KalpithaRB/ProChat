@@ -44,7 +44,13 @@
     *   Message bubbles are styled to distinguish between the current user's messages and messages from others. 
 *   **Chat Input:**
     *   A dedicated input field with a send button that enables/disables based on whether there's text to send.
-
+*   **Image Sharing with Upload Progress:**
+    *   Share images within chats.
+    *   Visual progress indicator (percentage and circular bar) displayed during image uploads.
+*   **File Size Validation:**
+    *   Client-side validation to ensure uploaded images do not exceed a 5MB limit, providing immediate feedback to the user.
+*   **Message Input with Character Limit:**
+    *   Text input field with a character counter and a maximum message length of 300 characters.
   ---
  
 📌 Firebase Choice: Cloud Firestore
@@ -61,6 +67,7 @@ Reasoning:
 
 🌍 Multi-region Replication: Improves latency for global users
 
+---
 
 ---
 
@@ -177,7 +184,26 @@ Known Issues:
 
 🔓 Firestore rules are currently open for development (allow read, write: if true;). These will be secured in upcoming phases.
 
+⚠️ Firebase Storage not used due to Blaze Plan requirements
+
+🔁 Cloudinary used for media storage as alternative
+
 ⚠️ Real-time receiving of messages (addSnapshotListener) will be implemented in Day 3
+
+---
+
+📸 Image Upload Flow
+Image selected via ActivityResultLauncher
+
+File size validated (Max 5MB)
+
+Uploads to Cloudinary with public_id
+
+Image URL stored in Firestore chat message
+
+Shown in chat using Coil with CircularProgressIndicator during upload
+
+🔁 Replaced Firebase Storage with Cloudinary due to Spark Plan limitations
 
 ---
 
