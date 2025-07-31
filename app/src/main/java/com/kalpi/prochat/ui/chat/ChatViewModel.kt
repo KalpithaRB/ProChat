@@ -36,11 +36,13 @@ import java.util.Date
 class ChatViewModel (
     private val chatRepository: ChatRepository, // Injected
     private val currentRoomId: String
+
 ): ViewModel() {
     // A simple way to distinguish the "current user" for dummy data styling.
     // In a real app, this would come from an authentication service.
     companion object {
         const val CURRENT_USER_ID = "currentUser"
+        private const val TAG = "ChatViewModel"
         const val OTHER_USER_ID = "otherUser"
     }
 
@@ -53,6 +55,10 @@ class ChatViewModel (
      */
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private val _tempMessageStore = MutableStateFlow<List<ChatMessage>>(emptyList())
+
+    // State to hold upload progress for messages (MessageID -> Progress Percentage)
+    private val _uploadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val uploadProgress: StateFlow<Map<String, Int>> = _uploadProgress.asStateFlow()
 
     init {
         //i am keeping this screen empty and removed the dummy data
@@ -122,6 +128,11 @@ class ChatViewModel (
         _tempMessageStore.value = updatedMessages
         processMessagesAndUpdateState(updatedMessages)
 
+        // Initialize progress for this messageId
+        _uploadProgress.update { currentProgress ->
+            currentProgress + (tempImageMessage.id to 0) // Start at 0%
+        }
+
         viewModelScope.launch {
 
             // For now, let's log that we would start the upload
@@ -131,7 +142,12 @@ class ChatViewModel (
             val uploadResult = chatRepository.uploadImageToCloudinaryAndGetUrl(
                 imageUri = imageUri,
                 uploadPreset = "prochat_unsigned_images", // <<< YOUR UPLOAD PRESET NAME HERE
-                messageIdForLog = tempImageMessage.id
+                messageIdForLog = tempImageMessage.id,
+                onProgress = { progressPercentage ->
+                    _uploadProgress.update { currentProgress ->
+                        currentProgress + (tempImageMessage.id to progressPercentage)
+                    }
+                }
             )
 
             if (uploadResult.isSuccess) {
@@ -217,7 +233,12 @@ class ChatViewModel (
                         val uploadResult = chatRepository.uploadImageToCloudinaryAndGetUrl(
                             imageUri = imageUriToRetry,
                             uploadPreset = "prochat_unsigned_images", // YOUR PRESET
-                            messageIdForLog = failedMessage.id
+                            messageIdForLog = failedMessage.id,
+                            onProgress = { progressPercentage ->
+                                _uploadProgress.update { currentProgress ->
+                                    currentProgress + (failedMessage.id to progressPercentage)
+                                }
+                            }
                         )
 
                         if (uploadResult.isSuccess) {

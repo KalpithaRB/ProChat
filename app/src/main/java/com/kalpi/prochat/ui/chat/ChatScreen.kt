@@ -26,6 +26,10 @@ import androidx.compose.material.icons.filled.Refresh // For FAILED state retry
 import androidx.compose.material.icons.outlined.CheckCircle // For SENT state (optional)
 import androidx.compose.material.icons.outlined.Schedule // For SENDING state
 import androidx.compose.material3.CircularProgressIndicator // Can also use for SENDING
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.*
@@ -186,6 +190,7 @@ fun ChatScreen(
                                         MessageBubble(
                                             message = chatItem.message,
                                             currentUserId = ChatViewModel.CURRENT_USER_ID, // Or however you get current user ID
+                                            chatViewModel = chatViewModel,
                                             onRetryClick = { messageToRetry -> // Add this lambda
                                                 chatViewModel.retrySendMessage(messageToRetry)
                                             }
@@ -243,6 +248,7 @@ fun DateSeparatorItem(text: String) {
 fun MessageBubble(
     message: ChatMessage,
     currentUserId: String,
+    chatViewModel: ChatViewModel,
     onRetryClick: (ChatMessage) -> Unit // Lambda to handle retry
 ) {
     val isCurrentUser = message.senderId == currentUserId
@@ -258,10 +264,16 @@ fun MessageBubble(
     val formattedTime = remember(message.clientTimestamp) {
         simpleDateFormat.format(Date(message.clientTimestamp))
     }
+
+    // Collect the upload progress for ALL messages
+    val uploadProgressMap by chatViewModel.uploadProgress.collectAsState()
+    // Get the progress for THIS specific message, if it exists
+    val currentMessageProgress = uploadProgressMap[message.id]
+
     // Adjust opacity for SENDING state
     //val bubbleAlpha = if (message.status == MessageStatus.SENDING) 0.7f else 1.0f
-    val bubbleAlpha = if (message.status == MessageStatus.SENDING && message.messageType == MessageType.IMAGE) 0.6f // More faded for pending image
-    else if (message.status == MessageStatus.SENDING) 0.7f
+    val bubbleAlpha = if (message.status == MessageStatus.SENDING && message.messageType == MessageType.IMAGE && currentMessageProgress == null) 0.6f
+    else if (message.status == MessageStatus.SENDING && currentMessageProgress == null) 0.7f
     else 1.0f
 
 
@@ -309,6 +321,7 @@ fun MessageBubble(
                 // User Message Bubble
                 Box(
                     modifier = Modifier
+                        .widthIn(max = 300.dp)
                         // .wrapContentWidth() // Let the bubble size to its content
                         .clip(
                             RoundedCornerShape( // Dynamic corner rounding
@@ -319,39 +332,96 @@ fun MessageBubble(
                             )
                         )
                         .background(bubbleColor)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        //.padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Column ( // Content inside the bubble
                         modifier = Modifier.padding( // General padding for text, adjusted if only image
-                            horizontal = if (message.imageUrl != null && message.text == null) 0.dp else 12.dp,
-                            vertical = if (message.imageUrl != null && message.text == null) 0.dp else 8.dp
+                            horizontal = if (message.imageUrl != null && message.text == null && currentMessageProgress == null) 0.dp else 12.dp, // No padding if only image and not uploading
+                            vertical = if (message.imageUrl != null && message.text == null && currentMessageProgress == null) 0.dp else 8.dp
                         )
                     )
                     { // To stack text and timestamp vertically
                         // Display Image if imageUrl is present
                         message.imageUrl?.let { imageUrl ->
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(imageUrl) // Handles local URIs and remote URLs
-                                    .crossfade(true)
-                                    // You can add a placeholder and error drawable
-                                    .placeholder(R.drawable.ic_placeholder_image) // Create this drawable
-                                    .error(R.drawable.ic_error_image)       // Create this drawable
-                                    .build(),
-                                contentDescription = "Chat image",
-                                contentScale = ContentScale.Fit, // Or ContentScale.Crop
-                                modifier = Modifier
-                                    .fillMaxWidth(0.6f) // Max width for image
-                                    .aspectRatio(1f) // Square aspect ratio, adjust as needed
-                                    .clip(
-                                        RoundedCornerShape( // Clip image inside bubble if it's the only content
-                                            topStart = 16.dp,
-                                            topEnd = 16.dp,
-                                            bottomStart = if (isCurrentUser) 16.dp else 4.dp,
-                                            bottomEnd = if (isCurrentUser) 4.dp else 16.dp
-                                        )
+                            val imageModifierBase = Modifier // Base modifier for both cases
+                                // .fillMaxWidth(0.6f) // Your previous width, adjust if needed
+                                .fillMaxWidth() // Let the bubble constrain it
+                                .heightIn(min = 100.dp, max = 220.dp) // Give it some min height too, max height
+                                .aspectRatio(1f / 1f) // Maintain aspect ratio, e.g., 1:1, 16:9 (0.6f / 0.6f = 1f)
+                                .clip(
+                                    RoundedCornerShape( // Clip image inside bubble
+                                        topStart = 12.dp, // Slightly less than bubble for inset look
+                                        topEnd = 12.dp,
+                                        bottomStart = if (isCurrentUser && message.text == null) 12.dp else if (message.text == null) 2.dp else 0.dp,
+                                        bottomEnd = if (!isCurrentUser && message.text == null) 12.dp else if (message.text == null) 2.dp else 0.dp
                                     )
-                            )
+                                )
+
+                            if (message.status == MessageStatus.SENDING &&
+                                (imageUrl.startsWith("content://") || imageUrl.startsWith("file://")) && // Check for local URI
+                                currentMessageProgress != null
+                            ) {
+                                // SHOW IMAGE WITH PROGRESS OVERLAY
+                                Box(contentAlignment = Alignment.Center) {
+//                                    AsyncImage(
+//                                        model = ImageRequest.Builder(LocalContext.current)
+//                                            .data(imageUrl) // Handles local URIs and remote URLs
+//                                            .crossfade(true)
+//                                            // You can add a placeholder and error drawable
+//                                            .placeholder(R.drawable.ic_placeholder_image) // Create this drawable
+//                                            .error(R.drawable.ic_error_image)       // Create this drawable
+//                                            .build(),
+//                                        contentDescription = "Chat image",
+//                                        contentScale = ContentScale.Fit, // Or ContentScale.Crop
+//                                        modifier = Modifier
+//                                            .fillMaxWidth(0.6f) // Max width for image
+//                                            .aspectRatio(1f) // Square aspect ratio, adjust as needed
+//                                            .clip(
+//                                                RoundedCornerShape( // Clip image inside bubble if it's the only content
+//                                                    topStart = 16.dp,
+//                                                    topEnd = 16.dp,
+//                                                    bottomStart = if (isCurrentUser) 16.dp else 4.dp,
+//                                                    bottomEnd = if (isCurrentUser) 4.dp else 16.dp
+//                                                )
+//                                            )
+//                                    )
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(imageUrl)
+                                            .crossfade(true)
+                                            .placeholder(R.drawable.ic_placeholder_image) // Your placeholder
+                                            .error(R.drawable.ic_error_image)           // Your error drawable
+                                            .build(),
+                                        contentDescription = "Uploading image",
+                                        contentScale = ContentScale.Crop, // Crop to fill bounds
+                                        modifier = imageModifierBase.alpha(0.4f) // Dim image
+                                    )
+                                    CircularProgressIndicator(
+                                        progress = { currentMessageProgress / 100f },
+                                        modifier = Modifier.size(48.dp),
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f), // Contrast against dimmed image
+                                        strokeWidth = 3.dp
+                                    )
+                                    Text(
+                                        text = "$currentMessageProgress%",
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }else {
+                                // SHOW NORMAL IMAGE (could be local before sending starts, or remote after upload)
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(imageUrl)
+                                        .crossfade(true)
+                                        .placeholder(R.drawable.ic_placeholder_image)
+                                        .error(R.drawable.ic_error_image)
+                                        .build(),
+                                    contentDescription = "Chat image",
+                                    contentScale = ContentScale.Crop, // Or ContentScale.Fit as you had
+                                    modifier = imageModifierBase
+                                )
+                            }
                         // If there's also text with the image, add some space
                         if (message.text != null) {
                             Spacer(Modifier.height(4.dp))
@@ -374,6 +444,7 @@ fun MessageBubble(
                     if (message.text != null || message.imageUrl != null) { // Ensure there's some content
                         Spacer(Modifier.height(4.dp)) // Spacer before timestamp/status
                     }
+                        // ***** START: MODIFIED TIMESTAMP AND STATUS ROW LOGIC *****
                         Row(
                             modifier = Modifier.align(Alignment.End),
                             verticalAlignment = Alignment.CenterVertically
@@ -383,20 +454,61 @@ fun MessageBubble(
                                 color = textColor.copy(alpha = 0.7f),
                                 style = MaterialTheme.typography.bodySmall
                             )
-                            // Status Icon for current user messages, shown to the right of timestamp
-                            if (isCurrentUser) {
-                                Spacer(Modifier.width(4.dp))
-                                MessageStatusIcon(
-                                    status = message.status,
-                                    onRetry = { onRetryClick(message) },
-                                    isCurrentUser = true
-                                )
+                            Spacer(Modifier.width(4.dp)) // Space before status icon
+
+                            if (isCurrentUser) { // Status icons only for current user next to timestamp
+                                if (message.status == MessageStatus.SENDING &&
+                                    currentMessageProgress != null &&
+                                    message.messageType == MessageType.IMAGE && // Only show image progress here if not overlaid
+                                    !(message.imageUrl?.startsWith("content://") == true || message.imageUrl?.startsWith("file://") == true)
+                                ) {
+                                    // Progress for image that's uploaded but pending Firestore (less common to see)
+                                    // Or a general sending indicator if image overlay isn't active
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = textColor.copy(alpha = 0.7f))
+                                        Text(
+                                            text = " $currentMessageProgress%", // Percentage next to small spinner
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = textColor.copy(alpha = 0.7f),
+                                            modifier = Modifier.padding(start = 2.dp)
+                                        )
+                                    }
+                                } else if (message.status == MessageStatus.SENDING && message.messageType == MessageType.TEXT) {
+                                    // Standard sending icon for text messages (no granular progress from Cloudinary)
+                                    Icon(
+                                        imageVector = Icons.Outlined.Schedule,
+                                        contentDescription = "Sending",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = textColor.copy(alpha = 0.7f)
+                                    )
+                                } else if (message.status != MessageStatus.SENDING) { // For SENT, FAILED
+                                    MessageStatusIcon( // Your existing MessageStatusIcon call
+                                        status = message.status,
+                                        onRetry = { onRetryClick(message) },
+                                        isCurrentUser = true // Always true in this block
+                                    )
+                                }
+                                // If it's an image being overlaid with progress, this block might show nothing extra for SENDING, which is fine.
                             }
                         }
                     }
                 }
             }
         }
+            // This is for the retry icon next to the bubble for the current user's FAILED messages
+            if (isCurrentUser && message.status == MessageStatus.FAILED) {
+                IconButton(
+                    onClick = { onRetryClick(message) },
+                    modifier = Modifier.padding(start = 4.dp).size(24.dp) // Place it after the bubble Column
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Error,
+                        contentDescription = "Retry sending message",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -409,6 +521,9 @@ fun MessageStatusIcon(
     isCurrentUser: Boolean // To potentially adjust icon color or style
 ) {
     val iconSize = 16.dp
+    val iconTint = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+    else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+
     when (status) {
         MessageStatus.SENDING -> {
             Icon(
@@ -486,57 +601,57 @@ fun MessageStatusIcon(
 //    }
 //}
 
-@Preview(showBackground = true, name = "Message Bubble Sent")
-@Composable
-fun MessageBubbleSentPreview() {
-    ProChatTheme {
-        MessageBubble(
-            message = ChatMessage(
-                id = "1",
-                senderId = ChatViewModel.CURRENT_USER_ID,
-                text = "This is a sent message example. It can be quite long to test wrapping.",
-                // clientTimestamp = System.currentTimeMillis()
-            ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID,
-            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
-        )
-    }
-}
+//@Preview(showBackground = true, name = "Message Bubble Sent")
+//@Composable
+//fun MessageBubbleSentPreview() {
+//    ProChatTheme {
+//        MessageBubble(
+//            message = ChatMessage(
+//                id = "1",
+//                senderId = ChatViewModel.CURRENT_USER_ID,
+//                text = "This is a sent message example. It can be quite long to test wrapping.",
+//                // clientTimestamp = System.currentTimeMillis()
+//            ),
+//            currentUserId = ChatViewModel.CURRENT_USER_ID,
+//            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
+//        )
+//    }
+//}
 
 
-@Preview(showBackground = true, name = "Message Bubble Received")
-@Composable
-fun MessageBubbleReceivedPreview() {
-    ProChatTheme {
-        MessageBubble(
-            message = ChatMessage(
-                id = "2",
-                senderId = ChatViewModel.OTHER_USER_ID, // Make sure OTHER_USER_ID is defined or use a string
-                text = "This is a received message! Shorter this time.",
-                // clientTimestamp = System.currentTimeMillis() // Assuming your ChatMessage constructor uses this
-                // If your constructor still has 'timestamp', adjust accordingly or update ChatMessage
-            ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID,
-            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
-        )
-    }
-}
+//@Preview(showBackground = true, name = "Message Bubble Received")
+//@Composable
+//fun MessageBubbleReceivedPreview() {
+//    ProChatTheme {
+//        MessageBubble(
+//            message = ChatMessage(
+//                id = "2",
+//                senderId = ChatViewModel.OTHER_USER_ID, // Make sure OTHER_USER_ID is defined or use a string
+//                text = "This is a received message! Shorter this time.",
+//                // clientTimestamp = System.currentTimeMillis() // Assuming your ChatMessage constructor uses this
+//                // If your constructor still has 'timestamp', adjust accordingly or update ChatMessage
+//            ),
+//            currentUserId = ChatViewModel.CURRENT_USER_ID,
+//            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
+//        )
+//    }
+//}
 
 
-@Preview(showBackground = true, name = "System Message")
-@Composable
-fun SystemMessagePreview() {
-    ProChatTheme {
-        MessageBubble(
-            message = ChatMessage(
-                id = "system1",
-                senderId = "system", // Or your system sender ID
-                text = "User Has Joined The Chat",
-                // clientTimestamp = System.currentTimeMillis(),
-                messageType = MessageType.SYSTEM
-            ),
-            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or a dummy ID for system messages
-            onRetryClick = { /* Preview: No action needed for retry, system messages might not fail/retry */ } // Add this
-        )
-    }
-}
+//@Preview(showBackground = true, name = "System Message")
+//@Composable
+//fun SystemMessagePreview() {
+//    ProChatTheme {
+//        MessageBubble(
+//            message = ChatMessage(
+//                id = "system1",
+//                senderId = "system", // Or your system sender ID
+//                text = "User Has Joined The Chat",
+//                // clientTimestamp = System.currentTimeMillis(),
+//                messageType = MessageType.SYSTEM
+//            ),
+//            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or a dummy ID for system messages
+//            onRetryClick = { /* Preview: No action needed for retry, system messages might not fail/retry */ } // Add this
+//        )
+//    }
+//}

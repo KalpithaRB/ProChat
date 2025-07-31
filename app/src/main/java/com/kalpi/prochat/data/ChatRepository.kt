@@ -46,7 +46,8 @@ class ChatRepository(private val db: FirebaseFirestore) {
     suspend fun uploadImageToCloudinaryAndGetUrl(
         imageUri: Uri,
         uploadPreset: String, // e.g., "prochat_unsigned_images"
-        messageIdForLog: String // For better logging
+        messageIdForLog: String, // For better logging
+        onProgress: (progress: Int) -> Unit
     ): Result<String> {
         // +++ START DIAGNOSTIC LOG +++
         try {
@@ -66,7 +67,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
             val request = MediaManager.get().upload(imageUri)
                 .unsigned(uploadPreset) // Use your unsigned upload preset
-                //.option("public_id", "chatrooms/user_uploads/${UUID.randomUUID()}") // Optional: Set a public_id for better organization
+                .option("public_id", "chatrooms/user_uploads/${UUID.randomUUID()}") // Optional: Set a public_id for better organization
                 .callback(object : UploadCallback {
                     override fun onStart(requestId: String?) {
                         Log.d(TAG, "Cloudinary upload started. Request ID: $requestId, Message: $messageIdForLog")
@@ -74,9 +75,9 @@ class ChatRepository(private val db: FirebaseFirestore) {
                     }
 
                     override fun onProgress(requestId: String?, bytes: Long, totalBytes: Long) {
-                        val progress = (bytes.toDouble() / totalBytes.toDouble() * 100).toInt()
+                        val progress = ((bytes.toDouble() / totalBytes.toDouble()) * 100).toInt()
                         Log.d(TAG, "Cloudinary upload progress: $progress%. Request ID: $requestId, Message: $messageIdForLog")
-                        // TODO: Implement progress update callback to ViewModel if desired
+                        onProgress(progress) // Call the passed-in lambda
                     }
 
                     override fun onSuccess(requestId: String?, resultData: MutableMap<Any?, Any?>?) {
