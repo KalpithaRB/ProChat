@@ -40,6 +40,24 @@ android {
     }
     buildFeatures {
         compose = true
+
+        viewBinding = true
+
+    }
+    packagingOptions {
+        resources {
+            excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+            // You might also need to exclude other common META-INF duplicates if they appear
+            excludes += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/LICENSE-notice.md"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/io.netty.versions.properties"
+            // Add specific Bouncy Castle META-INF files if the general ones aren't enough
+            excludes += "META-INF/BCKEY.*" // Example for Bouncy Castle specific patterns
+        }
     }
 }
 
@@ -76,6 +94,17 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.messaging)
+
+
+    //Cloudinary Dependencies
+    implementation("com.cloudinary:cloudinary-android:3.1.1")
+    implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
+    implementation("androidx.navigation:navigation-fragment:2.9.3")
+    implementation("androidx.navigation:navigation-ui:2.7.7")
+    implementation("com.android.volley:volley:1.2.1")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.android.identity:identity-jvm:202411.1")
 
 
 }

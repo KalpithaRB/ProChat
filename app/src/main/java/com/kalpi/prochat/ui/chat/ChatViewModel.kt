@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.update
 import java.util.UUID // For generating unique IDs for dummy messages
 import java.text.SimpleDateFormat // Keep for MessageBubble timestamp
 import java.util.Calendar
+import android.net.Uri // <<< ADD THIS IMPORT if not already there
+import android.util.Log // <<< ADD THIS IMPORT
 import java.util.Locale         // Keep for MessageBubble timestamp
 import java.util.Date
 
@@ -58,13 +60,6 @@ class ChatViewModel (
         processMessagesAndUpdateState(emptyList())
     }
 
-    /**
-     * Simulates loading messages.
-     * In a real app, this would involve fetching data from a repository or data source.
-     * For Day 1, it populates the state with a predefined list of dummy messages.
-     */
-
-
     // Sending a message
     // --- Message Sending Logic ---
     fun sendMessage(text: String) {
@@ -75,7 +70,7 @@ class ChatViewModel (
             senderId = CURRENT_USER_ID,
             text = text.trim(),
             clientTimestamp = System.currentTimeMillis(),
-            messageType = MessageType.USER,
+            messageType = MessageType.TEXT,
             status = MessageStatus.SENDING, // Initial status
             roomId = currentRoomId
         )
@@ -103,37 +98,171 @@ class ChatViewModel (
         }
     }
 
+    // +++++++++++++ NEW FUNCTION FOR IMAGE MESSAGES +++++++++++++
+    fun prepareAndSendImageMessage(imageUri: Uri) {
+        Log.d("ChatViewModel", "prepareAndSendImageMessage called with URI: $imageUri")
+
+        // 1. Create a temporary ChatMessage object for UI display (optional, but good for UX)
+        // This message will show an upload progress indicator.
+        val tempImageMessage = ChatMessage(
+            id = UUID.randomUUID().toString(), // Client-generated unique ID
+            senderId = CURRENT_USER_ID,
+            // text = null, // No text for a pure image message initially
+            imageUrl = imageUri.toString(), // Store local URI temporarily for local display/placeholder
+            clientTimestamp = System.currentTimeMillis(),
+            messageType = MessageType.IMAGE,
+            status = MessageStatus.SENDING, // Indicate it's in the process of being sent/uploaded
+            roomId = currentRoomId
+            // We might add an 'uploadProgress' field to ChatMessage later if needed,
+            // or manage progress separately. For now, SENDING status can imply progress.
+        )
+
+        // Add to local list immediately for UI update
+        val updatedMessages = _tempMessageStore.value + tempImageMessage
+        _tempMessageStore.value = updatedMessages
+        processMessagesAndUpdateState(updatedMessages)
+
+        viewModelScope.launch {
+
+            // For now, let's log that we would start the upload
+            Log.d("ChatViewModel", "Calling repository to upload image for message ID: ${tempImageMessage.id}")
+
+            // 1. Upload image to Cloudinary
+            val uploadResult = chatRepository.uploadImageToCloudinaryAndGetUrl(
+                imageUri = imageUri,
+                uploadPreset = "prochat_unsigned_images", // <<< YOUR UPLOAD PRESET NAME HERE
+                messageIdForLog = tempImageMessage.id
+            )
+
+            if (uploadResult.isSuccess) {
+                val cloudinaryUrl = uploadResult.getOrNull()
+                if (cloudinaryUrl != null) {
+                    Log.d("ChatViewModel", "Image upload success for message ID: ${tempImageMessage.id}. URL: $cloudinaryUrl")
+
+                    // 2. Create the final message object with the Cloudinary URL
+                    val finalImageMessage = tempImageMessage.copy(
+                        imageUrl = cloudinaryUrl, // Now has the remote URL
+                        // Status is still SENDING because we haven't sent to Firestore yet,
+                        // or you can consider it SENT if upload is the main part.
+                        // Let's keep it SENDING until Firestore confirms.
+                        // Alternatively, you could introduce an UPLOADING status.
+                        // For simplicity, SENDING covers both upload and Firestore write.
+                    )
+
+                    // 3. Send the message metadata (with Cloudinary URL) to Firestore
+                    Log.d("ChatViewModel", "Sending image message to Firestore. Message ID: ${finalImageMessage.id}")
+                    val sendToFirestoreResult = chatRepository.sendMessage(currentRoomId, finalImageMessage)
+
+                    if (sendToFirestoreResult.isSuccess) {
+                        Log.d("ChatViewModel", "Image message successfully sent to Firestore. Message ID: ${finalImageMessage.id}")
+                        updateMessageStatusInStore(tempImageMessage.id, MessageStatus.SENT, cloudinaryUrl)
+                    } else {
+                        Log.e("ChatViewModel", "Failed to send image message to Firestore. Message ID: ${finalImageMessage.id}", sendToFirestoreResult.exceptionOrNull())
+                        updateMessageStatusInStore(tempImageMessage.id, MessageStatus.FAILED, cloudinaryUrl) // Keep uploaded URL, but mark as failed to send
+                    }
+                } else {
+                    // This case should ideally not happen if uploadResult.isSuccess is true
+                    // and getOrNull returns a non-null string, but good to handle.
+                    Log.e("ChatViewModel", "Image upload succeeded but Cloudinary URL was null. Message ID: ${tempImageMessage.id}")
+                    updateMessageStatusInStore(tempImageMessage.id, MessageStatus.FAILED, imageUri.toString()) // Revert to local URI on failure
+                }
+            }else { // Upload to Cloudinary failed
+                Log.e("ChatViewModel", "Image upload failed for message ID: ${tempImageMessage.id}", uploadResult.exceptionOrNull())
+                updateMessageStatusInStore(tempImageMessage.id, MessageStatus.FAILED, imageUri.toString()) // Revert or keep local URI
+            }
+        }
+    }
+
     fun retrySendMessage(failedMessage: ChatMessage) {
         if (failedMessage.status != MessageStatus.FAILED) return // Only retry failed messages
 
-        // Optimistically update status to SENDING again
-        val messagesWithRetry = _tempMessageStore.value.map {
-            if (it.id == failedMessage.id) {
-                it.copy(status = MessageStatus.SENDING)
+        updateMessageStatusInStore(failedMessage.id, MessageStatus.SENDING, failedMessage.imageUrl) // Keep existing imageUrl during retry attempt
+
+
+        viewModelScope.launch {
+            if (failedMessage.messageType == MessageType.TEXT) {
+                // ... (your existing text retry logic) ...
+                val result = chatRepository.sendMessage(failedMessage.roomId, failedMessage.copy(status = MessageStatus.SENDING))
+                val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
+                updateMessageStatusInStore(failedMessage.id, finalStatus)
+
+            } else if (failedMessage.messageType == MessageType.IMAGE) {
+                // For image retry, we need to check if it failed during upload or during Firestore send.
+                // If failedMessage.imageUrl is a local content:// URI, it means upload failed.
+                // If it's an http:// or https:// URL, it means upload succeeded but Firestore send failed.
+
+                if (failedMessage.imageUrl != null && (failedMessage.imageUrl.startsWith("http://") || failedMessage.imageUrl.startsWith("https://"))) {
+                    // Upload was successful, retry sending to Firestore
+                    Log.d("ChatViewModel", "Retrying send to Firestore for image message: ${failedMessage.id}")
+                    val finalImageMessage = failedMessage.copy(status = MessageStatus.SENDING)
+                    val sendToFirestoreResult = chatRepository.sendMessage(currentRoomId, finalImageMessage)
+                    if (sendToFirestoreResult.isSuccess) {
+                        Log.d("ChatViewModel", "Image message retry to Firestore successful. ID: ${finalImageMessage.id}")
+                        updateMessageStatusInStore(failedMessage.id, MessageStatus.SENT, finalImageMessage.imageUrl)
+                    } else {
+                        Log.e("ChatViewModel", "Image message retry to Firestore failed. ID: ${finalImageMessage.id}", sendToFirestoreResult.exceptionOrNull())
+                        updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, finalImageMessage.imageUrl)
+                    }
+                } else if (failedMessage.imageUrl != null) { // Assumed to be a local URI, so upload failed
+                    Log.d("ChatViewModel", "Retrying upload for image message: ${failedMessage.id}")
+                    val imageUriToRetry = try { Uri.parse(failedMessage.imageUrl) } catch (e: Exception) { null }
+
+                    if (imageUriToRetry != null) {
+                        // Re-call the entire upload and send sequence for this image URI
+                        // Effectively, it's like calling prepareAndSendImageMessage again,
+                        // but we need to ensure we are updating the *existing* message ID.
+
+                        // For simplicity in retry, we'll directly call the upload again.
+                        // A more robust solution might involve a separate "retryUploadAndSend" in repository.
+                        val uploadResult = chatRepository.uploadImageToCloudinaryAndGetUrl(
+                            imageUri = imageUriToRetry,
+                            uploadPreset = "prochat_unsigned_images", // YOUR PRESET
+                            messageIdForLog = failedMessage.id
+                        )
+
+                        if (uploadResult.isSuccess) {
+                            val cloudinaryUrl = uploadResult.getOrNull()
+                            if (cloudinaryUrl != null) {
+                                val finalImageMessage = failedMessage.copy(imageUrl = cloudinaryUrl, status = MessageStatus.SENDING)
+                                val sendToFirestoreResult = chatRepository.sendMessage(currentRoomId, finalImageMessage)
+                                if (sendToFirestoreResult.isSuccess) {
+                                    updateMessageStatusInStore(failedMessage.id, MessageStatus.SENT, cloudinaryUrl)
+                                } else {
+                                    updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, cloudinaryUrl)
+                                }
+                            } else {
+                                updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, imageUriToRetry.toString())
+                            }
+                        } else {
+                            updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, imageUriToRetry.toString())
+                        }
+                    } else {
+                        Log.e("ChatViewModel", "Could not parse image URI for retry: ${failedMessage.imageUrl}")
+                        updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, failedMessage.imageUrl) // Mark as failed
+                    }
+                } else {
+                    Log.e("ChatViewModel", "Cannot retry image message, imageUrl is null. ID: ${failedMessage.id}")
+                    updateMessageStatusInStore(failedMessage.id, MessageStatus.FAILED, failedMessage.imageUrl)
+                }
+            }
+        }
+    }
+
+    // Helper to update message status and optionally URL in the local store
+    private fun updateMessageStatusInStore(messageId: String, newStatus: MessageStatus, newImageUrl: String? = null) {
+        val messagesAfterUpdate = _tempMessageStore.value.map {
+            if (it.id == messageId) {
+                it.copy(
+                    status = newStatus,
+                    imageUrl = newImageUrl ?: it.imageUrl // Update image URL if provided, else keep original
+                )
             } else {
                 it
             }
         }
-        _tempMessageStore.value = messagesWithRetry
-        processMessagesAndUpdateState(messagesWithRetry)
-
-        viewModelScope.launch {
-            // Use the original failedMessage object, as its ID is what matters for Firestore document path
-            val result = chatRepository.sendMessage(failedMessage.roomId, failedMessage.copy(status = MessageStatus.SENDING))
-            val finalStatus = if (result.isSuccess) MessageStatus.SENT else MessageStatus.FAILED
-
-            val messagesAfterRetryAttempt = _tempMessageStore.value.map {
-                if (it.id == failedMessage.id) {
-                    it.copy(status = finalStatus)
-                } else {
-                    it
-                }
-            }
-            _tempMessageStore.value = messagesAfterRetryAttempt
-            processMessagesAndUpdateState(messagesAfterRetryAttempt)
-        }
+        _tempMessageStore.value = messagesAfterUpdate
+        processMessagesAndUpdateState(messagesAfterUpdate)
     }
-
 
     // --- Helper function to process messages and update UI state (from Day 1) ---
     private fun processMessagesAndUpdateState(messages: List<ChatMessage>) {

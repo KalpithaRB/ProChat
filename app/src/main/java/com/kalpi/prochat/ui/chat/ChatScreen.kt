@@ -3,6 +3,7 @@ package com.kalpi.prochat.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +16,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Photo // Or filled.Image
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Error // For FAILED state
 import androidx.compose.material.icons.filled.Refresh // For FAILED state retry
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.outlined.CheckCircle // For SENT state (o
 import androidx.compose.material.icons.outlined.Schedule // For SENDING state
 import androidx.compose.material3.CircularProgressIndicator // Can also use for SENDING
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,6 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.layout.ContentScale // <<< ADD for image scaling
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage // <<< ADD COIL (or Glide)
+import coil.request.ImageRequest
+import com.kalpi.prochat.R
+
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
@@ -57,6 +68,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.text.SimpleDateFormat
+import android.net.Uri // Important: use android.net.Uri
+import androidx.compose.ui.semantics.error
+//import androidx.privacysandbox.tools.core.generator.build
+//import androidx.wear.compose.material.placeholder
 import java.util.*
 import com.kalpi.prochat.data.ChatItem
 
@@ -244,7 +259,11 @@ fun MessageBubble(
         simpleDateFormat.format(Date(message.clientTimestamp))
     }
     // Adjust opacity for SENDING state
-    val bubbleAlpha = if (message.status == MessageStatus.SENDING) 0.7f else 1.0f
+    //val bubbleAlpha = if (message.status == MessageStatus.SENDING) 0.7f else 1.0f
+    val bubbleAlpha = if (message.status == MessageStatus.SENDING && message.messageType == MessageType.IMAGE) 0.6f // More faded for pending image
+    else if (message.status == MessageStatus.SENDING) 0.7f
+    else 1.0f
+
 
 
     Box(
@@ -255,7 +274,8 @@ fun MessageBubble(
                 end = if (isCurrentUser) 0.dp else 64.dp,   // Indent opposite side
                 top = 2.dp,
                 bottom = 2.dp
-            ).alpha(bubbleAlpha),
+            )
+            .alpha(bubbleAlpha),
         contentAlignment = bubbleContainerAlignment // This aligns the content (bubble) within the Column
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -265,14 +285,16 @@ fun MessageBubble(
                      imageVector = Icons.Filled.Error,
                      contentDescription = "Message failed",
                      tint = MaterialTheme.colorScheme.error,
-                     modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                     modifier = Modifier
+                         .size(16.dp)
+                         .padding(end = 4.dp)
                  )
              }
             Column {
             if (message.messageType == MessageType.SYSTEM) {
                 // System Message Styling
                 Text(
-                    text = message.text,
+                    text = message.text ?: "",
                     style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -299,14 +321,59 @@ fun MessageBubble(
                         .background(bubbleColor)
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Column { // To stack text and timestamp vertically
-                        Text(
-                            text = message.text,
-                            color = textColor,
-                            style = MaterialTheme.typography.bodyLarge
+                    Column ( // Content inside the bubble
+                        modifier = Modifier.padding( // General padding for text, adjusted if only image
+                            horizontal = if (message.imageUrl != null && message.text == null) 0.dp else 12.dp,
+                            vertical = if (message.imageUrl != null && message.text == null) 0.dp else 8.dp
                         )
-                        Spacer(Modifier.height(4.dp))
+                    )
+                    { // To stack text and timestamp vertically
+                        // Display Image if imageUrl is present
+                        message.imageUrl?.let { imageUrl ->
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(imageUrl) // Handles local URIs and remote URLs
+                                    .crossfade(true)
+                                    // You can add a placeholder and error drawable
+                                    .placeholder(R.drawable.ic_placeholder_image) // Create this drawable
+                                    .error(R.drawable.ic_error_image)       // Create this drawable
+                                    .build(),
+                                contentDescription = "Chat image",
+                                contentScale = ContentScale.Fit, // Or ContentScale.Crop
+                                modifier = Modifier
+                                    .fillMaxWidth(0.6f) // Max width for image
+                                    .aspectRatio(1f) // Square aspect ratio, adjust as needed
+                                    .clip(
+                                        RoundedCornerShape( // Clip image inside bubble if it's the only content
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomStart = if (isCurrentUser) 16.dp else 4.dp,
+                                            bottomEnd = if (isCurrentUser) 4.dp else 16.dp
+                                        )
+                                    )
+                            )
+                        // If there's also text with the image, add some space
+                        if (message.text != null) {
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
 
+                    // Display Text if text is present
+                    message.text?.let { textContent ->
+                        if (textContent.isNotBlank()) { // Only display if text is not blank
+                            Text(
+                                text = textContent,
+                                color = textColor,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+
+                    // Timestamp and Status Row (always present if not a system message)
+                    // If only image and no text, padding might need adjustment here or outside
+                    if (message.text != null || message.imageUrl != null) { // Ensure there's some content
+                        Spacer(Modifier.height(4.dp)) // Spacer before timestamp/status
+                    }
                         Row(
                             modifier = Modifier.align(Alignment.End),
                             verticalAlignment = Alignment.CenterVertically
@@ -330,7 +397,9 @@ fun MessageBubble(
                 }
             }
         }
-} }}
+        }
+    }
+}
 
 
 @Composable

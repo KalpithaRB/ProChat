@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send // For M3
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults // Import this
@@ -17,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import android.util.Log // For logging
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 /**
  * Composable for the chat input area, including a text field and a send button.
@@ -41,6 +49,16 @@ fun ChatInput(
     // Local state for the TextFieldValue, managed within ChatInput
     var textState by remember { mutableStateOf(TextFieldValue("")) }
 
+    // Launcher for picking an image from the device's gallery
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            Log.d("ChatInput", "Image URI selected: $selectedUri")
+            chatViewModel.prepareAndSendImageMessage(selectedUri) // Call ViewModel
+        }
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shadowElevation = 4.dp // Add some elevation
@@ -51,6 +69,16 @@ fun ChatInput(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Image Picker Button
+            IconButton(onClick = {
+                imagePickerLauncher.launch("image/*") // Launch image picker
+            }) {
+                Icon(
+                    imageVector = Icons.Filled.Photo,
+                    contentDescription = "Pick Image",
+                    tint = MaterialTheme.colorScheme.primary // Optional tint
+                )
+            }
             OutlinedTextField(
                 value = textState,
                 onValueChange = { textState = it },
@@ -78,7 +106,7 @@ fun ChatInput(
 
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Send,
+                    imageVector = Icons.AutoMirrored.Filled.Send,
                     contentDescription = "Send message"
                     // tint = if (textState.text.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = ContentAlpha.disabled) // M2 style
                 )
