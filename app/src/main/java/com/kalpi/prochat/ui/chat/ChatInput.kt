@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Send // For M3
 import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults // Import this
@@ -17,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.*
@@ -30,10 +32,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import android.util.Log // For logging
-
+import com.kalpi.prochat.data.getFileSizeFromUri // Adjust the import path
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Composable for the chat input area, including a text field and a send button.
@@ -41,6 +45,10 @@ import androidx.activity.result.contract.ActivityResultContracts
  * @param chatViewModel The ViewModel to handle sending messages.
  * @param modifier Modifier for this composable.
  */
+
+// Define your file size limit (5MB in bytes)
+private const val MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
+
 @Composable
 fun ChatInput(
     chatViewModel: ChatViewModel, // Pass the ViewModel
@@ -48,6 +56,7 @@ fun ChatInput(
 ) {
     // Local state for the TextFieldValue, managed within ChatInput
     var textState by remember { mutableStateOf(TextFieldValue("")) }
+    val context = LocalContext.current // Get context for Toast and getFileSizeFromUri
 
     // Launcher for picking an image from the device's gallery
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -55,7 +64,27 @@ fun ChatInput(
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
             Log.d("ChatInput", "Image URI selected: $selectedUri")
-            chatViewModel.prepareAndSendImageMessage(selectedUri) // Call ViewModel
+
+            // --- START FILE SIZE CHECK ---
+            val fileSize = getFileSizeFromUri(context, selectedUri)
+            Log.d("ChatInput", "Selected image URI: $selectedUri, Size: $fileSize bytes")
+
+            if (fileSize == -1L) {
+                Log.w("ChatInput", "Could not determine file size for $selectedUri.")
+                Toast.makeText(context, "Could not determine image size.", Toast.LENGTH_SHORT).show()
+                // Optionally, decide if you want to block or allow. Blocking is safer.
+            } else if (fileSize > MAX_FILE_SIZE_BYTES) {
+                Log.w("ChatInput", "Image $selectedUri is too large: $fileSize bytes. Max allowed: $MAX_FILE_SIZE_BYTES bytes.")
+                Toast.makeText(context, "Image is too large (max 5MB). Please select a smaller one.", Toast.LENGTH_LONG).show()
+            } else {
+                // File size is OK, proceed with sending
+                Log.d("ChatInput", "Image size OK. Calling ViewModel to prepare and send.")
+                chatViewModel.prepareAndSendImageMessage(selectedUri) // Call ViewModel
+            }
+            // --- END FILE SIZE CHECK ---
+
+        } ?: run {
+            Log.d("ChatInput", "No image selected or image picker cancelled.")
         }
     }
 
@@ -85,7 +114,8 @@ fun ChatInput(
                 placeholder = { Text("Type a message...") },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors( // Using TextFieldDefaults.colors for M3
+                colors = TextFieldDefaults.colors(
+                    // Using TextFieldDefaults.colors for M3
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     disabledIndicatorColor = Color.Transparent, // Optional: if you ever disable it
