@@ -20,6 +20,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.*
@@ -42,6 +43,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 
+
 /**
  * Composable for the chat input area, including a text field and a send button.
  *
@@ -60,142 +62,129 @@ fun ChatInput(
     chatViewModel: ChatViewModel, // Pass the ViewModel
     modifier: Modifier = Modifier
 ) {
-    // Local state for the TextFieldValue, managed within ChatInput
     var textState by remember { mutableStateOf(TextFieldValue("")) }
-    val context = LocalContext.current // Get context for Toast and getFileSizeFromUri
+    val context = LocalContext.current
 
-    // Launcher for picking an image from the device's gallery
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
             Log.d("ChatInput", "Image URI selected: $selectedUri")
-
-            // --- START FILE SIZE CHECK ---
-            val fileSize = getFileSizeFromUri(context, selectedUri)
+            val fileSize = getFileSizeFromUri(context, selectedUri) // Corrected placement
             Log.d("ChatInput", "Selected image URI: $selectedUri, Size: $fileSize bytes")
 
             if (fileSize == -1L) {
                 Log.w("ChatInput", "Could not determine file size for $selectedUri.")
                 Toast.makeText(context, "Could not determine image size.", Toast.LENGTH_SHORT).show()
-                // Optionally, decide if you want to block or allow. Blocking is safer.
             } else if (fileSize > MAX_FILE_SIZE_BYTES) {
                 Log.w("ChatInput", "Image $selectedUri is too large: $fileSize bytes. Max allowed: $MAX_FILE_SIZE_BYTES bytes.")
                 Toast.makeText(context, "Image is too large (max 5MB). Please select a smaller one.", Toast.LENGTH_LONG).show()
             } else {
-                // File size is OK, proceed with sending
                 Log.d("ChatInput", "Image size OK. Calling ViewModel to prepare and send.")
-                chatViewModel.prepareAndSendImageMessage(selectedUri) // Call ViewModel
+                chatViewModel.prepareAndSendImageMessage(selectedUri)
             }
-            // --- END FILE SIZE CHECK ---
-
         } ?: run {
             Log.d("ChatInput", "No image selected or image picker cancelled.")
         }
     }
-    val isEnabled = textState.text.isNotBlank() && textState.text.length <= MAX_MESSAGE_LENGTH
+
+    val isSendEnabled = textState.text.isNotBlank() && textState.text.length <= MAX_MESSAGE_LENGTH
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shadowElevation = 4.dp // Add some elevation
+        shadowElevation = 4.dp
     ) {
         Row(
             modifier = Modifier
                 .padding(horizontal = 8.dp, vertical = 8.dp)
                 .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically // Align items vertically in the center of the Row
         ) {
             // Image Picker Button
             IconButton(onClick = {
-                imagePickerLauncher.launch("image/*") // Launch image picker
+                imagePickerLauncher.launch("image/*")
             }) {
                 Icon(
                     imageVector = Icons.Filled.Photo,
                     contentDescription = "Pick Image",
-                    tint = MaterialTheme.colorScheme.primary // Optional tint
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
-            OutlinedTextField(
-                value = textState,
-                onValueChange = { textState = it },
-                placeholder = { Text("Type a message...") },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                colors = TextFieldDefaults.colors(
-                    // Using TextFieldDefaults.colors for M3
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent, // Optional: if you ever disable it
-                    // cursorColor = MaterialTheme.colorScheme.primary // Optional: customize cursor
-                ),
-                maxLines = 5 // Optional: allow multi-line input up to a point
-            )
-        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
 
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            Spacer(modifier = Modifier.width(8.dp)) // Add some space between icon and text field
+
+            // Column for TextField and Character Counter
+            Column(
+                modifier = Modifier.weight(1f) // TextField and counter will take available space
             ) {
                 OutlinedTextField(
                     value = textState,
-                    onValueChange = { // Only update textState if the new text is within the limit
+                    onValueChange = {
+                        // Only update textState if the new text is within the limit or being deleted
                         if (it.text.length <= MAX_MESSAGE_LENGTH) {
                             textState = it
+                        } else if (it.text.length < textState.text.length) {
+                            // Allow deletion even if over limit (though it shouldn't get there with the check)
+                            textState = it
                         }
+                        // To prevent typing more than MAX_MESSAGE_LENGTH,
+                        // you could also slice the text here:
+                        // if (it.text.length <= MAX_MESSAGE_LENGTH) {
+                        //    textState = it
+                        // } else {
+                        //    textState = TextFieldValue(it.text.substring(0, MAX_MESSAGE_LENGTH), it.selection)
+                        // }
                     },
                     placeholder = { Text("Type a message...") },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(), // TextField takes full width of the Column
                     shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
-                        // Using TextFieldDefaults.colors for M3
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent, // Optional: if you ever disable it
-                        // cursorColor = MaterialTheme.colorScheme.primary // Optional: customize cursor
+                        disabledIndicatorColor = Color.Transparent,
                     ),
-                    maxLines = 5,// Optional: allow multi-line input up to a point
+                    maxLines = 5,
                     keyboardOptions = KeyboardOptions.Default.copy(
-                        imeAction = ImeAction.Send
+                        imeAction = ImeAction.Send // Show send button on keyboard
                     ),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            if (isEnabled) {
+                            if (isSendEnabled) {
                                 chatViewModel.sendMessage(textState.text)
-                                textState = TextFieldValue("")
+                                textState = TextFieldValue("") // Clear input
                             }
                         }
                     )
                 )
+                // Character counter
+                Text(
+                    text = "${textState.text.length} / $MAX_MESSAGE_LENGTH",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (textState.text.length > MAX_MESSAGE_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.End) // Align counter to the end of the Column
+                        .padding(top = 4.dp, end = 8.dp)
+                )
+            }
 
-                IconButton(
-                    onClick = {
-                        val messageText = textState.text
-                        if (messageText.isNotBlank()) {
-                            chatViewModel.sendMessage(messageText)
-                            textState = TextFieldValue("") // Clear input after sending
-                        }
-                    },
-                    enabled = textState.text.isNotBlank() // Disable button if text is blank
+            Spacer(modifier = Modifier.width(8.dp)) // Add some space before send button
 
+            // Send Button
+            IconButton(
+                onClick = {
+                    if (isSendEnabled) {
+                        chatViewModel.sendMessage(textState.text)
+                        textState = TextFieldValue("") // Clear input after sending
+                    }
+                },
+                enabled = isSendEnabled // Use the pre-calculated enabled state
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send message"
-                    // tint = if (textState.text.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = ContentAlpha.disabled) // M2 style
+                    contentDescription = "Send message",
+                    tint = if (isSendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) // Standard disabled tint
                 )
             }
-            // Optional: Character counter
-            Text(
-                text = "${textState.text.length} / $MAX_MESSAGE_LENGTH",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (textState.text.length > MAX_MESSAGE_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 4.dp, end = 8.dp) // Adjust padding as needed
-            )
-        }}
-    }}
-
+        }
+    }
 }
