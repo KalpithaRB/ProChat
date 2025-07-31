@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Send // For M3
@@ -37,7 +38,9 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 
 /**
  * Composable for the chat input area, including a text field and a send button.
@@ -48,6 +51,9 @@ import androidx.compose.ui.platform.LocalContext
 
 // Define your file size limit (5MB in bytes)
 private const val MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
+
+
+private const val MAX_MESSAGE_LENGTH = 300
 
 @Composable
 fun ChatInput(
@@ -87,6 +93,7 @@ fun ChatInput(
             Log.d("ChatInput", "No image selected or image picker cancelled.")
         }
     }
+    val isEnabled = textState.text.isNotBlank() && textState.text.length <= MAX_MESSAGE_LENGTH
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -123,16 +130,54 @@ fun ChatInput(
                 ),
                 maxLines = 5 // Optional: allow multi-line input up to a point
             )
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
 
-            IconButton(
-                onClick = {
-                    val messageText = textState.text
-                    if (messageText.isNotBlank()) {
-                        chatViewModel.sendMessage(messageText)
-                        textState = TextFieldValue("") // Clear input after sending
-                    }
-                },
-                enabled = textState.text.isNotBlank() // Disable button if text is blank
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = textState,
+                    onValueChange = { // Only update textState if the new text is within the limit
+                        if (it.text.length <= MAX_MESSAGE_LENGTH) {
+                            textState = it
+                        }
+                    },
+                    placeholder = { Text("Type a message...") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = TextFieldDefaults.colors(
+                        // Using TextFieldDefaults.colors for M3
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent, // Optional: if you ever disable it
+                        // cursorColor = MaterialTheme.colorScheme.primary // Optional: customize cursor
+                    ),
+                    maxLines = 5,// Optional: allow multi-line input up to a point
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Send
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (isEnabled) {
+                                chatViewModel.sendMessage(textState.text)
+                                textState = TextFieldValue("")
+                            }
+                        }
+                    )
+                )
+
+                IconButton(
+                    onClick = {
+                        val messageText = textState.text
+                        if (messageText.isNotBlank()) {
+                            chatViewModel.sendMessage(messageText)
+                            textState = TextFieldValue("") // Clear input after sending
+                        }
+                    },
+                    enabled = textState.text.isNotBlank() // Disable button if text is blank
 
             ) {
                 Icon(
@@ -141,6 +186,16 @@ fun ChatInput(
                     // tint = if (textState.text.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = ContentAlpha.disabled) // M2 style
                 )
             }
-        }
-    }
+            // Optional: Character counter
+            Text(
+                text = "${textState.text.length} / $MAX_MESSAGE_LENGTH",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (textState.text.length > MAX_MESSAGE_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 4.dp, end = 8.dp) // Adjust padding as needed
+            )
+        }}
+    }}
+
 }
