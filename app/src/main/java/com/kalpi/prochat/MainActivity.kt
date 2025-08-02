@@ -5,22 +5,27 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.kalpi.prochat.ui.chat.ChatScreen
+import com.kalpi.prochat.ui.presentations.screens.ChatScreen
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import androidx.lifecycle.viewmodel.compose.viewModel // Standard viewModel delegate
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.firestore
-import com.kalpi.prochat.data.ChatRepository // Your ChatRepository
-import com.kalpi.prochat.ui.chat.ChatViewModel // Your ChatViewModel
-import com.kalpi.prochat.ui.chat.ChatViewModelFactory // Your ChatViewModelFactory
+import com.kalpi.prochat.data.repository.ChatRepository // Your ChatRepository
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.ui.presentations.screens.ChatRoomListScreen
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModelFactory
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
+import com.kalpi.prochat.ui.theme.ProChatTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,28 +34,48 @@ class MainActivity : ComponentActivity() {
         setContent {
             ProChatTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    // 1. Get Firestore instance
+                    // Get a Firestore instance for all repositories
                     val firestore = Firebase.firestore
-                    // 2. Create ChatRepository instance
-                    val chatRepository = ChatRepository(firestore)
-                    // 3. Define your currentRoomId (using the constant from ChatRepository for Day 2)
-                    val currentRoomId = ChatRepository.DEFAULT_ROOM_ID
 
+                    // Get the unique user ID, which is needed for all ViewModels
+                    val uniqueUserId = ChatViewModel.getOrCreateUserId(LocalContext.current)
 
-                    // 1. Get the unique user ID here
-                    val uniqueUserId = ChatViewModel.getOrCreateUserId(LocalContext.current) // <-- NEW
+                    // Navigation State: Holds the ID of the chat room we are currently viewing.
+                    // If it's null, we display the ChatRoomListScreen.
+                    var currentRoomId: String? by remember { mutableStateOf(null) }
 
-                    // 4. Create the ChatViewModelFactory
-                    val chatViewModelFactory = ChatViewModelFactory(chatRepository, currentRoomId, uniqueUserId)
-
-                    // 5. Instantiate ChatViewModel using the factory
-                    val chatViewModel: ChatViewModel = viewModel(factory = chatViewModelFactory)
-
-                    // 6. Pass the viewModel to your ChatScreen
-                    ChatScreen(chatViewModel = chatViewModel) // Assuming ChatScreen takes chatViewModel as a parameter
+                    // We need a conditional display based on our navigation state
+                    if (currentRoomId == null) {
+                        // Display the list of chat rooms
+                        val chatRoomRepository = ChatRoomRepository(firestore)
+                        val chatRoomListViewModel: ChatRoomListViewModel = viewModel(
+                            factory = ChatRoomListViewModelFactory(chatRoomRepository, uniqueUserId)
+                        )
+                        ChatRoomListScreen(
+                            chatRoomListViewModel = chatRoomListViewModel,
+                            onRoomClicked = { roomId ->
+                                // When a room is clicked, update the state to the selected room ID.
+                                // This will cause a recomposition, showing the ChatScreen.
+                                currentRoomId = roomId
+                            }
+                        )
+                    } else {
+                        // Display the chat screen for the selected room
+                        val chatRepository = ChatRepository(firestore)
+                        val chatViewModel: ChatViewModel = viewModel(
+                            factory = ChatViewModelFactory(chatRepository, currentRoomId!!, uniqueUserId)
+                        )
+                        ChatScreen(
+                            chatViewModel = chatViewModel,
+                            onBackClicked = {
+                                // When the back button is clicked, reset the state to null.
+                                // This will cause a recomposition, returning to the list screen.
+                                currentRoomId = null
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 }
-

@@ -1,8 +1,8 @@
-package com.kalpi.prochat.ui.chat
+package com.kalpi.prochat.ui.presentations.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.kalpi.prochat.data.ChatRepository
+import com.kalpi.prochat.data.repository.ChatRepository
 
 /**
  * Factory for creating instances of ChatViewModel with dependencies.

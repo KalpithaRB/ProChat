@@ -1,37 +1,33 @@
-package com.kalpi.prochat.ui.chat
+package com.kalpi.prochat.ui.presentations.viewmodel
 
+import android.content.Context
+import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kalpi.prochat.data.ChatRepository
 import com.kalpi.prochat.data.ChatItem
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
-import com.kalpi.prochat.utils.isSameDay
+import com.kalpi.prochat.data.repository.ChatRepository
+import com.kalpi.prochat.ui.chat.ChatUiState
 import com.kalpi.prochat.utils.formatDateSeparator
+import com.kalpi.prochat.utils.isSameDay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.update
-import java.util.UUID // For generating unique IDs for dummy messages
-import java.text.SimpleDateFormat // Keep for MessageBubble timestamp
-import java.util.Calendar
-import android.net.Uri // <<< ADD THIS IMPORT if not already there
-import android.util.Log // <<< ADD THIS IMPORT
-import java.util.Locale         // Keep for MessageBubble timestamp
-import java.util.Date
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import android.content.Context
-
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * ViewModel for the ChatScreen.
  *
  * This ViewModel is responsible for preparing and managing the UI-related data for the ChatScreen.
- * It exposes the chat messages and UI state through [StateFlow].
+ * It exposes the chat messages and UI state through [kotlinx.coroutines.flow.StateFlow].
  *
  * For Day 1, it uses a predefined list of dummy messages.
  * In later stages, it will interact with a data source (e.g., Firebase) to fetch and send messages.
@@ -66,7 +62,7 @@ class ChatViewModel (
     // Starts in a Loading state, then transitions to Content with dummy messages.
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
     /**
-     * Publicly exposed [StateFlow] of the [ChatUiState].
+     * Publicly exposed [kotlinx.coroutines.flow.StateFlow] of the [ChatUiState].
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
@@ -74,7 +70,7 @@ class ChatViewModel (
             processMessagesAndUpdateState(messages)
         }.stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
+            started = SharingStarted.Companion.WhileSubscribed(5000),
             initialValue = ChatUiState.Loading
         )
 
@@ -182,7 +178,11 @@ class ChatViewModel (
         var lastDateHeaderTimestamp: Long? = null
 
         sortedMessages.forEach { message ->
-            if (lastDateHeaderTimestamp == null || !isSameDay(message.clientTimestamp, lastDateHeaderTimestamp!!)) {
+            if (lastDateHeaderTimestamp == null || !isSameDay(
+                    message.clientTimestamp,
+                    lastDateHeaderTimestamp!!
+                )
+            ) {
                 chatItems.add(ChatItem.DateSeparator(formatDateSeparator(message.clientTimestamp), message.clientTimestamp))
                 lastDateHeaderTimestamp = message.clientTimestamp
             }

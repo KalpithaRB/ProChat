@@ -1,4 +1,4 @@
-package com.kalpi.prochat.ui.chat
+package com.kalpi.prochat.ui.presentations.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -8,23 +8,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Error // For FAILED state
-import androidx.compose.material.icons.outlined.CheckCircle // For SENT state (optional)
-import androidx.compose.material.icons.outlined.Schedule // For SENDING state
 import androidx.compose.material3.CircularProgressIndicator // Can also use for SENDING
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Spacer
-import com.kalpi.prochat.utils.formatTime
 
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.TextFieldValue
@@ -53,22 +43,22 @@ import java.text.SimpleDateFormat
 //import androidx.wear.compose.material.placeholder
 import com.kalpi.prochat.data.ChatItem
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kalpi.prochat.ui.chat.ChatInput
+import com.kalpi.prochat.ui.chat.ChatUiState
 import java.util.Locale
-import com.kalpi.prochat.ui.chat.ImageMessage
-import com.kalpi.prochat.ui.chat.TextMessage
-import com.kalpi.prochat.ui.chat.ChatViewModel
-
-
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
+import com.kalpi.prochat.ui.chat.MessageStatusIcon
 
 
 /**
  * The main screen for displaying a chat conversation.
- * It observes [ChatUiState] from the [ChatViewModel] and displays messages,
+ * It observes [com.kalpi.prochat.ui.chat.ChatUiState] from the [ChatViewModel] and displays messages,
  * an input field, and a send button.
  *
  * @param chatViewModel The ViewModel providing chat data and state.
@@ -80,7 +70,8 @@ fun ChatScreen(
     // We can allow providing a specific recipient name if needed later for the TopAppBar
     // recipientName: String = "Chat User",
     modifier: Modifier = Modifier,
-    chatViewModel: ChatViewModel // Uses the default ViewModel factory
+    chatViewModel: ChatViewModel, // Uses the default ViewModel factory
+    onBackClicked: () -> Unit
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState() // For auto-scrolling
@@ -103,6 +94,14 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onBackClicked) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                },
                 title = { Text("Chat Pro" /* TODO: Use recipientName later */) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,

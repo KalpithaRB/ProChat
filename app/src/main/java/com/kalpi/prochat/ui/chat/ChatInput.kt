@@ -43,7 +43,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
-import com.kalpi.prochat.ui.chat.ChatViewModel
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 
 
 

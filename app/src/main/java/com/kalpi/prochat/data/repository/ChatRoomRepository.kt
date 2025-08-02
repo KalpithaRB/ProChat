@@ -1,0 +1,141 @@
+package com.kalpi.prochat.data.repository
+
+import com.google.firebase.firestore.FirebaseFirestore
+import com.kalpi.prochat.data.model.ChatRoom
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.tasks.await
+import android.util.Log
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.map
+
+class ChatRoomRepository(private val db: FirebaseFirestore) {
+
+    companion object {
+        private const val TAG = "ChatRoomRepository"
+        private const val CHATROOMS_COLLECTION = "chatrooms"
+        private const val USER_CHATROOMS_COLLECTION = "user_chat_rooms"
+        private const val CHATROOMS_SUB_COLLECTION = "rooms"
+        private const val MESSAGES_COLLECTION = "messages"
+    }
+
+    /**
+     * Listens for a user's chat rooms in real-time and calculates the unread count for each.
+     * This function now separates the concerns: the callbackFlow emits the raw list,
+     * and the subsequent map operator enriches each item with the unread count.
+     */
+    fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
+        val roomsFlow = callbackFlow {
+            val roomsCollection = db.collection(USER_CHATROOMS_COLLECTION)
+                .document(userId)
+                .collection(CHATROOMS_SUB_COLLECTION)
+                .orderBy("lastTimestamp", Query.Direction.DESCENDING)
+
+            val subscription = roomsCollection.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val chatRooms = snapshot.documents.mapNotNull { document ->
+                        document.toObject(ChatRoom::class.java)
+                    }
+                    trySend(chatRooms)
+                }
+            }
+            awaitClose { subscription.remove() }
+        }
+
+        // Map over the flow of rooms to add the unread count for each one.
+        // We use a coroutineScope with async/awaitAll to perform the count queries in parallel.
+        return roomsFlow.map { chatRooms ->
+            coroutineScope {
+                chatRooms.map { chatRoom ->
+                    async {
+                        val unreadCount = getUnreadCountForRoom(chatRoom.roomId, chatRoom.lastReadTimestamp)
+                        chatRoom.copy(unreadCount = unreadCount)
+                    }
+                }.awaitAll()
+            }
+        }
+    }
+
+    /**
+     * A suspend function to fetch the unread message count for a specific room.
+     * It queries the messages collection for messages with a timestamp newer than the lastReadTimestamp.
+     */
+    private suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int {
+        return try {
+            val querySnapshot = db.collection(MESSAGES_COLLECTION)
+                .document(roomId)
+                .collection(MESSAGES_COLLECTION)
+                .whereGreaterThan("clientTimestamp", lastReadTimestamp)
+                .get()
+                .await()
+            querySnapshot.size()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting unread count for room $roomId", e)
+            0
+        }
+    }
+
+    /**
+     * Marks a specific chat room as read by updating the lastReadTimestamp.
+     */
+    suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit> {
+        return try {
+            db.collection(USER_CHATROOMS_COLLECTION)
+                .document(userId)
+                .collection(CHATROOMS_SUB_COLLECTION)
+                .document(roomId)
+                .update("lastReadTimestamp", System.currentTimeMillis())
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error marking room as read", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Creates a new chat room and adds it to the user's list.
+     */
+    suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
+        return try {
+            val newRoom = mapOf(
+                "name" to roomName,
+                "createdAt" to System.currentTimeMillis(),
+                "participants" to participantIds
+            )
+            val newRoomRef = db.collection(CHATROOMS_COLLECTION).add(newRoom).await()
+            val newRoomId = newRoomRef.id
+
+            // Create a document for each participant
+            participantIds.forEach { userId ->
+                val userRoomData = mapOf(
+                    "name" to roomName,
+                    "lastMessage" to "Room created.",
+                    "lastTimestamp" to System.currentTimeMillis(),
+                    "lastReadTimestamp" to System.currentTimeMillis()
+                )
+                db.collection(USER_CHATROOMS_COLLECTION)
+                    .document(userId)
+                    .collection(CHATROOMS_SUB_COLLECTION)
+                    .document(newRoomId)
+                    .set(userRoomData)
+                    .await()
+            }
+
+            Log.d(TAG, "Successfully created new room with ID: $newRoomId for participants: $participantIds")
+            Result.success(newRoomId)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating new chat room", e)
+            Result.failure(e)
+        }
+    }
+}

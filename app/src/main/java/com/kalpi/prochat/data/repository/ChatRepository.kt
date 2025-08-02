@@ -1,26 +1,21 @@
-package com.kalpi.prochat.data
+package com.kalpi.prochat.data.repository
 
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
 import android.net.Uri
 import android.util.Log
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
-import com.kalpi.prochat.data.model.ChatMessage
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.kalpi.prochat.data.model.ChatMessage
+import com.kalpi.prochat.data.model.MessageStatus
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-//import com.android.identity.util.UUID
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.tasks.await
 import java.util.UUID
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.firestore
-import com.google.firebase.Firebase
-import com.kalpi.prochat.data.model.MessageStatus
+import kotlin.coroutines.resume
 
 class ChatRepository(private val db: FirebaseFirestore) {
 
@@ -75,28 +70,46 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
             val request = MediaManager.get().upload(imageUri)
                 .unsigned(uploadPreset) // Use your unsigned upload preset
-                .option("public_id", "chatrooms/user_uploads/${UUID.randomUUID()}") // Optional: Set a public_id for better organization
+                .option(
+                    "public_id",
+                    "chatrooms/user_uploads/${UUID.randomUUID()}"
+                ) // Optional: Set a public_id for better organization
                 .callback(object : UploadCallback {
                     override fun onStart(requestId: String?) {
-                        Log.d(TAG, "Cloudinary upload started. Request ID: $requestId, Message: $messageIdForLog")
+                        Log.d(
+                            TAG,
+                            "Cloudinary upload started. Request ID: $requestId, Message: $messageIdForLog"
+                        )
                         // You could emit a progress state here if implementing progress updates
                     }
 
                     override fun onProgress(requestId: String?, bytes: Long, totalBytes: Long) {
                         val progress = ((bytes.toDouble() / totalBytes.toDouble()) * 100).toInt()
-                        Log.d(TAG, "Cloudinary upload progress: $progress%. Request ID: $requestId, Message: $messageIdForLog")
+                        Log.d(
+                            TAG,
+                            "Cloudinary upload progress: $progress%. Request ID: $requestId, Message: $messageIdForLog"
+                        )
                         onProgress(progress) // Call the passed-in lambda
                     }
 
-                    override fun onSuccess(requestId: String?, resultData: MutableMap<Any?, Any?>?) {
+                    override fun onSuccess(
+                        requestId: String?,
+                        resultData: MutableMap<Any?, Any?>?
+                    ) {
                         val url = resultData?.get("secure_url") as? String
                         if (url != null) {
-                            Log.d(TAG, "Cloudinary upload success. URL: $url, Request ID: $requestId, Message: $messageIdForLog")
+                            Log.d(
+                                TAG,
+                                "Cloudinary upload success. URL: $url, Request ID: $requestId, Message: $messageIdForLog"
+                            )
                             if (continuation.isActive) {
                                 continuation.resume(Result.success(url))
                             }
                         } else {
-                            Log.e(TAG, "Cloudinary upload success but URL is null. ResultData: $resultData, Request ID: $requestId, Message: $messageIdForLog")
+                            Log.e(
+                                TAG,
+                                "Cloudinary upload success but URL is null. ResultData: $resultData, Request ID: $requestId, Message: $messageIdForLog"
+                            )
                             if (continuation.isActive) {
                                 continuation.resume(Result.failure(Exception("Cloudinary upload succeeded but URL was null.")))
                             }
@@ -104,14 +117,20 @@ class ChatRepository(private val db: FirebaseFirestore) {
                     }
 
                     override fun onError(requestId: String?, error: ErrorInfo?) {
-                        Log.e(TAG, "Cloudinary upload error. Code: ${error?.code}, Desc: ${error?.description}, Request ID: $requestId, Message: $messageIdForLog")
+                        Log.e(
+                            TAG,
+                            "Cloudinary upload error. Code: ${error?.code}, Desc: ${error?.description}, Request ID: $requestId, Message: $messageIdForLog"
+                        )
                         if (continuation.isActive) {
                             continuation.resume(Result.failure(Exception("Cloudinary upload failed: ${error?.description} (Code: ${error?.code})")))
                         }
                     }
 
                     override fun onReschedule(requestId: String?, error: ErrorInfo?) {
-                        Log.w(TAG, "Cloudinary upload rescheduled. Code: ${error?.code}, Desc: ${error?.description}, Request ID: $requestId, Message: $messageIdForLog")
+                        Log.w(
+                            TAG,
+                            "Cloudinary upload rescheduled. Code: ${error?.code}, Desc: ${error?.description}, Request ID: $requestId, Message: $messageIdForLog"
+                        )
                         // This typically means a network issue and it will retry.
                         // For a simple implementation, we might treat this as still pending or eventually an error if it keeps happening.
                         // You could choose to not resume the coroutine here and let it retry,
@@ -145,7 +164,10 @@ class ChatRepository(private val db: FirebaseFirestore) {
         val messagesCollection = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
-            .orderBy("clientTimestamp", Query.Direction.ASCENDING) // Order by client-side timestamp for consistency
+            .orderBy(
+                "clientTimestamp",
+                Query.Direction.ASCENDING
+            ) // Order by client-side timestamp for consistency
 
         val subscription = messagesCollection.addSnapshotListener { snapshot, error ->
             if (error != null) {
