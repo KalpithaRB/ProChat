@@ -20,7 +20,7 @@ import com.google.firebase.firestore.firestore
 import com.kalpi.prochat.data.ChatRepository // Your ChatRepository
 import com.kalpi.prochat.ui.chat.ChatViewModel // Your ChatViewModel
 import com.kalpi.prochat.ui.chat.ChatViewModelFactory // Your ChatViewModelFactory
-
+import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,15 +31,17 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     // 1. Get Firestore instance
                     val firestore = Firebase.firestore
-
                     // 2. Create ChatRepository instance
                     val chatRepository = ChatRepository(firestore)
-
                     // 3. Define your currentRoomId (using the constant from ChatRepository for Day 2)
                     val currentRoomId = ChatRepository.DEFAULT_ROOM_ID
 
+
+                    // 1. Get the unique user ID here
+                    val uniqueUserId = ChatViewModel.getOrCreateUserId(LocalContext.current) // <-- NEW
+
                     // 4. Create the ChatViewModelFactory
-                    val chatViewModelFactory = ChatViewModelFactory(chatRepository, currentRoomId)
+                    val chatViewModelFactory = ChatViewModelFactory(chatRepository, currentRoomId, uniqueUserId)
 
                     // 5. Instantiate ChatViewModel using the factory
                     val chatViewModel: ChatViewModel = viewModel(factory = chatViewModelFactory)

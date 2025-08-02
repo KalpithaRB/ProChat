@@ -9,13 +9,14 @@ import com.kalpi.prochat.data.ChatRepository
  */
 class ChatViewModelFactory(
     private val chatRepository: ChatRepository,
-    private val roomId: String
+    private val roomId: String,
+    private val currentUserId: String
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
-            return ChatViewModel(chatRepository, roomId) as T
+            return ChatViewModel(chatRepository, roomId, currentUserId) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

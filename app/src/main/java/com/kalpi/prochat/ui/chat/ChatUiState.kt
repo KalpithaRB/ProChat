@@ -1,7 +1,7 @@
 package com.kalpi.prochat.ui.chat
 
 
-import com.kalpi.prochat.data.ChatMessage
+import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.ChatItem
 
 /**

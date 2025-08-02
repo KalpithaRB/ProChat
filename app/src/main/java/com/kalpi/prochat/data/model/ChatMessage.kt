@@ -1,4 +1,4 @@
-package com.kalpi.prochat.data
+package com.kalpi.prochat.data.model
 
 import com.google.firebase.firestore.ServerTimestamp // For server-side timestamping
 import java.util.Date // Keep this if you still want a client-side estimate
@@ -46,7 +46,9 @@ data class ChatMessage(
 enum class MessageStatus {
     SENDING,
     SENT,
-    FAILED
+    FAILED,
+    DELIVERED,
+    READ
     // SEEN // For Day 6
 }
 
@@ -57,5 +59,5 @@ enum class MessageType {
     TEXT,  // <<< MODIFIED: Was USER, now explicitly TEXT
     IMAGE, // <<< NEW: For image messages
     /** A system-generated message (e.g., "User X has joined the chat"). */
-    SYSTEM
+    SYSTEM, USER
 }

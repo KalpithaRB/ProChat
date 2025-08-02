@@ -3,7 +3,6 @@ package com.kalpi.prochat.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,17 +15,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Photo // Or filled.Image
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Error // For FAILED state
-import androidx.compose.material.icons.filled.Refresh // For FAILED state retry
 import androidx.compose.material.icons.outlined.CheckCircle // For SENT state (optional)
 import androidx.compose.material.icons.outlined.Schedule // For SENDING state
 import androidx.compose.material3.CircularProgressIndicator // Can also use for SENDING
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
@@ -37,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
@@ -47,37 +39,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.ui.layout.ContentScale // <<< ADD for image scaling
-import androidx.compose.ui.platform.LocalContext
-import coil.compose.AsyncImage // <<< ADD COIL (or Glide)
-import coil.request.ImageRequest
-import com.kalpi.prochat.R
+import com.kalpi.prochat.utils.formatTime
 
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel // For viewModel()
-import com.kalpi.prochat.data.ChatMessage
-import com.kalpi.prochat.data.MessageType
-import com.kalpi.prochat.data.MessageStatus
-import com.kalpi.prochat.ui.chat.ChatViewModel
-import com.kalpi.prochat.ui.theme.ProChatTheme // Assuming your theme is named ProChatTheme
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.kalpi.prochat.data.model.ChatMessage
+import com.kalpi.prochat.data.model.MessageType
+import com.kalpi.prochat.data.model.MessageStatus
 import java.text.SimpleDateFormat
-import android.net.Uri // Important: use android.net.Uri
-import androidx.compose.ui.semantics.error
+
 //import androidx.privacysandbox.tools.core.generator.build
 //import androidx.wear.compose.material.placeholder
-import java.util.*
 import com.kalpi.prochat.data.ChatItem
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.util.Locale
+import com.kalpi.prochat.ui.chat.ImageMessage
+import com.kalpi.prochat.ui.chat.TextMessage
+import com.kalpi.prochat.ui.chat.ChatViewModel
+
+
 
 
 /**
@@ -100,6 +86,7 @@ fun ChatScreen(
     val listState = rememberLazyListState() // For auto-scrolling
     var textState by remember { mutableStateOf(TextFieldValue("")) }
 
+    val uploadProgress by chatViewModel.uploadProgress.collectAsState()
     // Coroutine scope for launching animations or other suspend functions if needed
     // val coroutineScope = rememberCoroutineScope()
 
@@ -108,13 +95,7 @@ fun ChatScreen(
         if (uiState is ChatUiState.Content) {
             val messages = (uiState as ChatUiState.Content).messages
             if (messages.isNotEmpty()) {
-                // Heuristic: if last visible item is close to the end, then scroll.
-                // You might want a more sophisticated check if the user has scrolled up significantly.
-                if (listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == messages.size - 2 ||
-                    listState.layoutInfo.visibleItemsInfo.isEmpty() // Initially scroll
-                ) {
-                    listState.animateScrollToItem(messages.size - 1)
-                }
+                listState.animateScrollToItem(messages.size - 1)
             }
         }
     }
@@ -132,7 +113,8 @@ fun ChatScreen(
         },
         bottomBar = {
             ChatInput(
-                chatViewModel = chatViewModel
+                onSendMessage = chatViewModel::sendMessage,
+                onSendImageMessage = chatViewModel::prepareAndSendImageMessage
             )
         }
     ) { innerPadding ->
@@ -174,8 +156,20 @@ fun ChatScreen(
                                 items = state.messages, // Use state.items
                                 key = { chatItem -> // Unique key for each item
                                     when (chatItem) {
-                                        is ChatItem.Message -> chatItem.message.id
-                                        is ChatItem.DateSeparator -> chatItem.timestamp.toString() // Use timestamp for key
+                                        is ChatItem.Message -> {
+                                            // Use the message ID if it exists, otherwise create a temporary one
+                                            if (chatItem.message.id.isNotEmpty()) {
+                                                chatItem.message.id
+                                            } else {
+                                                // This ensures unsent messages (with no ID) still have a unique key.
+                                                "${chatItem.message.senderId}-${chatItem.message.clientTimestamp}"
+                                            }
+                                        }
+                                        is ChatItem.DateSeparator -> {
+                                            // Use the timestamp for a more reliable key for separators.
+                                            // I've also added a prefix to prevent key clashes with messages.
+                                            "separator-${chatItem.timestamp}"
+                                        }
                                     }
                                 },
                                 contentType = { chatItem -> // For performance with different item types
@@ -189,17 +183,17 @@ fun ChatScreen(
                                     is ChatItem.Message -> {
                                         MessageBubble(
                                             message = chatItem.message,
-                                            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or however you get current user ID
-                                            chatViewModel = chatViewModel,
-                                            onRetryClick = { messageToRetry -> // Add this lambda
+                                            currentUserId = chatViewModel.currentUserId,
+                                            uploadProgress = uploadProgress[chatItem.message.id],
+                                            onRetryClick = { messageToRetry ->
                                                 chatViewModel.retrySendMessage(messageToRetry)
                                             }
                                         )
-                                        Spacer(modifier = Modifier.height(8.dp)) // Add spacing after each message
+                                        Spacer(modifier = Modifier.height(8.dp))
                                     }
                                     is ChatItem.DateSeparator -> {
                                         DateSeparatorItem(text = chatItem.displayDate)
-                                        Spacer(modifier = Modifier.height(8.dp)) // Add spacing after each separator
+                                        Spacer(modifier = Modifier.height(8.dp))
                                     }
                                 }
                             }
@@ -217,17 +211,17 @@ fun DateSeparatorItem(text: String) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 16.dp), // More padding for separators
+            .padding(vertical = 8.dp, horizontal = 16.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall, // Or bodySmall
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .background(
-                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f), // Subtle background
+                    MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f),
                     RoundedCornerShape(12.dp)
                 )
                 .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -248,265 +242,74 @@ fun DateSeparatorItem(text: String) {
 fun MessageBubble(
     message: ChatMessage,
     currentUserId: String,
-    chatViewModel: ChatViewModel,
-    onRetryClick: (ChatMessage) -> Unit // Lambda to handle retry
+    uploadProgress: Int?,
+    onRetryClick: (ChatMessage) -> Unit
 ) {
+    // This is the CRITICAL part for alignment. If senderId and currentUserId are the same, it's 'me'.
     val isCurrentUser = message.senderId == currentUserId
-    val bubbleContainerAlignment  = if (isCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
-    val bubbleColor = if (isCurrentUser) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.secondaryContainer
-    val textColor = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSecondaryContainer
-    //val horizontalArrangement = if (isCurrentUser) Arrangement.End else Arrangement.Start
 
-    // For timestamp formatting
-    val simpleDateFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
-    val formattedTime = remember(message.clientTimestamp) {
-        simpleDateFormat.format(Date(message.clientTimestamp))
-    }
-
-    // Collect the upload progress for ALL messages
-    val uploadProgressMap by chatViewModel.uploadProgress.collectAsState()
-    // Get the progress for THIS specific message, if it exists
-    val currentMessageProgress = uploadProgressMap[message.id]
-
-    // Adjust opacity for SENDING state
-    //val bubbleAlpha = if (message.status == MessageStatus.SENDING) 0.7f else 1.0f
-    val bubbleAlpha = if (message.status == MessageStatus.SENDING && message.messageType == MessageType.IMAGE && currentMessageProgress == null) 0.6f
-    else if (message.status == MessageStatus.SENDING && currentMessageProgress == null) 0.7f
-    else 1.0f
-
-
-
+    // Main container to align the bubble left or right
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(
-                start = if (isCurrentUser) 64.dp else 0.dp, // Indent opposite side
-                end = if (isCurrentUser) 0.dp else 64.dp,   // Indent opposite side
-                top = 2.dp,
-                bottom = 2.dp
-            )
-            .alpha(bubbleAlpha),
-        contentAlignment = bubbleContainerAlignment // This aligns the content (bubble) within the Column
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = if (isCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            // For "other user" messages, status icon could be on the left (optional)
-             if (!isCurrentUser && message.status == MessageStatus.FAILED) {
-                 Icon(
-                     imageVector = Icons.Filled.Error,
-                     contentDescription = "Message failed",
-                     tint = MaterialTheme.colorScheme.error,
-                     modifier = Modifier
-                         .size(16.dp)
-                         .padding(end = 4.dp)
-                 )
-             }
+        // The bubble content itself
+        Box(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (isCurrentUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer)
+                .alpha(if (message.status == MessageStatus.SENDING) 0.7f else 1.0f)
+                .padding(10.dp)
+        ) {
             Column {
-            if (message.messageType == MessageType.SYSTEM) {
-                // System Message Styling
-                Text(
-                    text = message.text ?: "",
-                    style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .padding(vertical = 8.dp, horizontal = 16.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            } else {
-                // User Message Bubble
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 300.dp)
-                        // .wrapContentWidth() // Let the bubble size to its content
-                        .clip(
-                            RoundedCornerShape( // Dynamic corner rounding
-                                topStart = 16.dp,
-                                topEnd = 16.dp,
-                                bottomStart = if (isCurrentUser) 16.dp else 4.dp,
-                                bottomEnd = if (isCurrentUser) 4.dp else 16.dp
-                            )
-                        )
-                        .background(bubbleColor)
-                        //.padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Column ( // Content inside the bubble
-                        modifier = Modifier.padding( // General padding for text, adjusted if only image
-                            horizontal = if (message.imageUrl != null && message.text == null && currentMessageProgress == null) 0.dp else 12.dp, // No padding if only image and not uploading
-                            vertical = if (message.imageUrl != null && message.text == null && currentMessageProgress == null) 0.dp else 8.dp
-                        )
+                // Main message content
+                if (message.messageType == MessageType.SYSTEM) {
+                    Text(
+                        text = message.text ?: "",
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 14.sp
                     )
-                    { // To stack text and timestamp vertically
-                        // Display Image if imageUrl is present
-                        message.imageUrl?.let { imageUrl ->
-                            val imageModifierBase = Modifier // Base modifier for both cases
-                                // .fillMaxWidth(0.6f) // Your previous width, adjust if needed
-                                .fillMaxWidth() // Let the bubble constrain it
-                                .heightIn(min = 100.dp, max = 220.dp) // Give it some min height too, max height
-                                .aspectRatio(1f / 1f) // Maintain aspect ratio, e.g., 1:1, 16:9 (0.6f / 0.6f = 1f)
-                                .clip(
-                                    RoundedCornerShape( // Clip image inside bubble
-                                        topStart = 12.dp, // Slightly less than bubble for inset look
-                                        topEnd = 12.dp,
-                                        bottomStart = if (isCurrentUser && message.text == null) 12.dp else if (message.text == null) 2.dp else 0.dp,
-                                        bottomEnd = if (!isCurrentUser && message.text == null) 12.dp else if (message.text == null) 2.dp else 0.dp
-                                    )
-                                )
-
-                            if (message.status == MessageStatus.SENDING &&
-                                (imageUrl.startsWith("content://") || imageUrl.startsWith("file://")) && // Check for local URI
-                                currentMessageProgress != null
-                            ) {
-                                // SHOW IMAGE WITH PROGRESS OVERLAY
-                                Box(contentAlignment = Alignment.Center) {
-//                                    AsyncImage(
-//                                        model = ImageRequest.Builder(LocalContext.current)
-//                                            .data(imageUrl) // Handles local URIs and remote URLs
-//                                            .crossfade(true)
-//                                            // You can add a placeholder and error drawable
-//                                            .placeholder(R.drawable.ic_placeholder_image) // Create this drawable
-//                                            .error(R.drawable.ic_error_image)       // Create this drawable
-//                                            .build(),
-//                                        contentDescription = "Chat image",
-//                                        contentScale = ContentScale.Fit, // Or ContentScale.Crop
-//                                        modifier = Modifier
-//                                            .fillMaxWidth(0.6f) // Max width for image
-//                                            .aspectRatio(1f) // Square aspect ratio, adjust as needed
-//                                            .clip(
-//                                                RoundedCornerShape( // Clip image inside bubble if it's the only content
-//                                                    topStart = 16.dp,
-//                                                    topEnd = 16.dp,
-//                                                    bottomStart = if (isCurrentUser) 16.dp else 4.dp,
-//                                                    bottomEnd = if (isCurrentUser) 4.dp else 16.dp
-//                                                )
-//                                            )
-//                                    )
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageUrl)
-                                            .crossfade(true)
-                                            .placeholder(R.drawable.ic_placeholder_image) // Your placeholder
-                                            .error(R.drawable.ic_error_image)           // Your error drawable
-                                            .build(),
-                                        contentDescription = "Uploading image",
-                                        contentScale = ContentScale.Crop, // Crop to fill bounds
-                                        modifier = imageModifierBase.alpha(0.4f) // Dim image
-                                    )
-                                    CircularProgressIndicator(
-                                        progress = { currentMessageProgress / 100f },
-                                        modifier = Modifier.size(48.dp),
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f), // Contrast against dimmed image
-                                        strokeWidth = 3.dp
-                                    )
-                                    Text(
-                                        text = "$currentMessageProgress%",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            }else {
-                                // SHOW NORMAL IMAGE (could be local before sending starts, or remote after upload)
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(imageUrl)
-                                        .crossfade(true)
-                                        .placeholder(R.drawable.ic_placeholder_image)
-                                        .error(R.drawable.ic_error_image)
-                                        .build(),
-                                    contentDescription = "Chat image",
-                                    contentScale = ContentScale.Crop, // Or ContentScale.Fit as you had
-                                    modifier = imageModifierBase
-                                )
-                            }
-                        // If there's also text with the image, add some space
-                        if (message.text != null) {
-                            Spacer(Modifier.height(4.dp))
-                        }
-                    }
-
-                    // Display Text if text is present
+                } else {
                     message.text?.let { textContent ->
-                        if (textContent.isNotBlank()) { // Only display if text is not blank
-                            Text(
-                                text = textContent,
-                                color = textColor,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
+                        Text(
+                            text = textContent,
+                            color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontSize = 16.sp
+                        )
                     }
 
-                    // Timestamp and Status Row (always present if not a system message)
-                    // If only image and no text, padding might need adjustment here or outside
-                    if (message.text != null || message.imageUrl != null) { // Ensure there's some content
-                        Spacer(Modifier.height(4.dp)) // Spacer before timestamp/status
-                    }
-                        // ***** START: MODIFIED TIMESTAMP AND STATUS ROW LOGIC *****
-                        Row(
-                            modifier = Modifier.align(Alignment.End),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = formattedTime,
-                                color = textColor.copy(alpha = 0.7f),
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Spacer(Modifier.width(4.dp)) // Space before status icon
-
-                            if (isCurrentUser) { // Status icons only for current user next to timestamp
-                                if (message.status == MessageStatus.SENDING &&
-                                    currentMessageProgress != null &&
-                                    message.messageType == MessageType.IMAGE && // Only show image progress here if not overlaid
-                                    !(message.imageUrl?.startsWith("content://") == true || message.imageUrl?.startsWith("file://") == true)
-                                ) {
-                                    // Progress for image that's uploaded but pending Firestore (less common to see)
-                                    // Or a general sending indicator if image overlay isn't active
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = textColor.copy(alpha = 0.7f))
-                                        Text(
-                                            text = " $currentMessageProgress%", // Percentage next to small spinner
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = textColor.copy(alpha = 0.7f),
-                                            modifier = Modifier.padding(start = 2.dp)
-                                        )
-                                    }
-                                } else if (message.status == MessageStatus.SENDING && message.messageType == MessageType.TEXT) {
-                                    // Standard sending icon for text messages (no granular progress from Cloudinary)
-                                    Icon(
-                                        imageVector = Icons.Outlined.Schedule,
-                                        contentDescription = "Sending",
-                                        modifier = Modifier.size(16.dp),
-                                        tint = textColor.copy(alpha = 0.7f)
-                                    )
-                                } else if (message.status != MessageStatus.SENDING) { // For SENT, FAILED
-                                    MessageStatusIcon( // Your existing MessageStatusIcon call
-                                        status = message.status,
-                                        onRetry = { onRetryClick(message) },
-                                        isCurrentUser = true // Always true in this block
-                                    )
-                                }
-                                // If it's an image being overlaid with progress, this block might show nothing extra for SENDING, which is fine.
-                            }
-                        }
-                    }
+                    // A spacer is good practice to separate content from meta-data
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
-            }
-        }
-            // This is for the retry icon next to the bubble for the current user's FAILED messages
-            if (isCurrentUser && message.status == MessageStatus.FAILED) {
-                IconButton(
-                    onClick = { onRetryClick(message) },
-                    modifier = Modifier.padding(start = 4.dp).size(24.dp) // Place it after the bubble Column
+
+                // Row for time and status icon, aligned to the bottom end of the bubble
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Error,
-                        contentDescription = "Retry sending message",
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(18.dp)
+                    // Time
+                    val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+                    Text(
+                        text = timeFormat.format(message.clientTimestamp),
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                        fontSize = 12.sp
                     )
+
+                    // Spacer between time and icon
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Status Icon (only for current user)
+                    if (isCurrentUser) {
+                        MessageStatusIcon(
+                            status = message.status,
+                            onRetry = { onRetryClick(message) },
+                            isCurrentUser = true
+                        )
+                    }
                 }
             }
         }
@@ -514,48 +317,49 @@ fun MessageBubble(
 }
 
 
-@Composable
-fun MessageStatusIcon(
-    status: MessageStatus,
-    onRetry: () -> Unit,
-    isCurrentUser: Boolean // To potentially adjust icon color or style
-) {
-    val iconSize = 16.dp
-    val iconTint = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-    else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
 
-    when (status) {
-        MessageStatus.SENDING -> {
-            Icon(
-                imageVector = Icons.Outlined.Schedule,
-                contentDescription = "Sending message",
-                modifier = Modifier.size(iconSize),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-            // Or use a small CircularProgressIndicator:
-            // CircularProgressIndicator(modifier = Modifier.size(iconSize), strokeWidth = 1.5.dp)
-        }
-        MessageStatus.SENT -> {
-            // Optionally show a "sent" tick, or nothing for a cleaner look
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle, // Or a single tick
-                contentDescription = "Message sent",
-                modifier = Modifier.size(iconSize),
-                tint = MaterialTheme.colorScheme.secondary // Or a more subtle color
-            )
-        }
-        MessageStatus.FAILED -> {
-            Icon(
-                imageVector = Icons.Filled.Error, // Or Icons.Filled.Refresh to imply retry directly
-                contentDescription = "Message failed, tap to retry",
-                modifier = Modifier
-                    .size(iconSize)
-                    .clickable(onClick = onRetry),
-                tint = MaterialTheme.colorScheme.error
-            )
-        }
-    }
-}
+//@Composable
+//fun MessageStatusIcon(
+//    status: MessageStatus,
+//    onRetry: () -> Unit,
+//    isCurrentUser: Boolean // To potentially adjust icon color or style
+//) {
+//    val iconSize = 16.dp
+//    val iconTint = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+//    else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+//
+//    when (status) {
+//        MessageStatus.SENDING -> {
+//            Icon(
+//                imageVector = Icons.Outlined.Schedule,
+//                contentDescription = "Sending message",
+//                modifier = Modifier.size(iconSize),
+//                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+//            )
+//            // Or use a small CircularProgressIndicator:
+//            // CircularProgressIndicator(modifier = Modifier.size(iconSize), strokeWidth = 1.5.dp)
+//        }
+//        MessageStatus.SENT -> {
+//            // Optionally show a "sent" tick, or nothing for a cleaner look
+//            Icon(
+//                imageVector = Icons.Outlined.CheckCircle, // Or a single tick
+//                contentDescription = "Message sent",
+//                modifier = Modifier.size(iconSize),
+//                tint = MaterialTheme.colorScheme.secondary // Or a more subtle color
+//            )
+//        }
+//        MessageStatus.FAILED -> {
+//            Icon(
+//                imageVector = Icons.Filled.Error, // Or Icons.Filled.Refresh to imply retry directly
+//                contentDescription = "Message failed, tap to retry",
+//                modifier = Modifier
+//                    .size(iconSize)
+//                    .clickable(onClick = onRetry),
+//                tint = MaterialTheme.colorScheme.error
+//            )
+//        }
+//    }
+//}
 
 
 // A simplified ViewModel for preview purposes, or use a fake/mocking library for more complex scenarios

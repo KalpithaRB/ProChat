@@ -2,24 +2,30 @@ package com.kalpi.prochat.data
 
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
-import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.cloudinary.android.MediaManager
 import com.cloudinary.android.callback.ErrorInfo
 import com.cloudinary.android.callback.UploadCallback
+import com.kalpi.prochat.data.model.ChatMessage
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 //import com.android.identity.util.UUID
 import java.util.UUID
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.firestore
+import com.google.firebase.Firebase
+import com.kalpi.prochat.data.model.MessageStatus
 
 class ChatRepository(private val db: FirebaseFirestore) {
 
-    // For Day 2: We'll assume a fixed roomId for now for simplicity in ViewModel
-    // In a real app, roomId would come from navigation or chatroom selection
     companion object {
-        const val DEFAULT_ROOM_ID = "default_chat_room" // Placeholder
+        const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
         private const val TAG = "ChatRepository"
         private const val CHATROOMS_COLLECTION = "chatrooms"
         private const val MESSAGES_COLLECTION = "messages"
@@ -27,12 +33,14 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
     suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
         return try {
-            db.collection("chatrooms")
+            val docRef = db.collection(CHATROOMS_COLLECTION )
                 .document(roomId)
-                .collection("messages")
+                .collection(MESSAGES_COLLECTION)
                 .document(message.id) // Use the client-generated message.id as the document ID
-                .set(message)
-                .await() // Make it a suspend function call
+            // First, write the message to the document
+            docRef.set(message).await()
+            // 2. Update the status to SENT. This is the crucial step.
+            docRef.update("status", MessageStatus.SENT.name).await()
             Result.success(Unit)
         } catch (e: Exception) {
             // Log.e("ChatRepository", "Error sending message", e) // Good practice to log
@@ -126,6 +134,37 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
             request.dispatch() // This starts the upload
             Log.d(TAG, "Cloudinary upload request dispatched for message: $messageIdForLog")
+        }
+    }
+
+    /**
+     * Listens for real-time messages from Firestore and emits them as a Flow.
+     * This uses the existing ChatMessage data model without modification.
+     */
+    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
+        val messagesCollection = db.collection(CHATROOMS_COLLECTION)
+            .document(roomId)
+            .collection(MESSAGES_COLLECTION)
+            .orderBy("clientTimestamp", Query.Direction.ASCENDING) // Order by client-side timestamp for consistency
+
+        val subscription = messagesCollection.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error) // Close the flow with the error
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                val messages = snapshot.documents.mapNotNull { document ->
+                    // Your ChatMessage class is directly used for deserialization
+                    document.toObject(ChatMessage::class.java)
+                }
+                trySend(messages).isSuccess // Emit the new list of messages
+            }
+        }
+
+        // The awaitClose block is important to cancel the listener when the Flow is no longer needed
+        awaitClose {
+            subscription.remove()
         }
     }
 }

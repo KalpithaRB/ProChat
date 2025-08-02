@@ -23,6 +23,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import com.kalpi.prochat.ui.chat.ChatViewModel
+
 
 
 /**
@@ -57,9 +60,11 @@ private const val MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
 
 private const val MAX_MESSAGE_LENGTH = 300
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInput(
-    chatViewModel: ChatViewModel, // Pass the ViewModel
+    onSendMessage: (String) -> Unit,
+    onSendImageMessage: (Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var textState by remember { mutableStateOf(TextFieldValue("")) }
@@ -81,7 +86,7 @@ fun ChatInput(
                 Toast.makeText(context, "Image is too large (max 5MB). Please select a smaller one.", Toast.LENGTH_LONG).show()
             } else {
                 Log.d("ChatInput", "Image size OK. Calling ViewModel to prepare and send.")
-                chatViewModel.prepareAndSendImageMessage(selectedUri)
+                onSendImageMessage(selectedUri)
             }
         } ?: run {
             Log.d("ChatInput", "No image selected or image picker cancelled.")
@@ -127,13 +132,6 @@ fun ChatInput(
                             // Allow deletion even if over limit (though it shouldn't get there with the check)
                             textState = it
                         }
-                        // To prevent typing more than MAX_MESSAGE_LENGTH,
-                        // you could also slice the text here:
-                        // if (it.text.length <= MAX_MESSAGE_LENGTH) {
-                        //    textState = it
-                        // } else {
-                        //    textState = TextFieldValue(it.text.substring(0, MAX_MESSAGE_LENGTH), it.selection)
-                        // }
                     },
                     placeholder = { Text("Type a message...") },
                     modifier = Modifier.fillMaxWidth(), // TextField takes full width of the Column
@@ -150,8 +148,8 @@ fun ChatInput(
                     keyboardActions = KeyboardActions(
                         onSend = {
                             if (isSendEnabled) {
-                                chatViewModel.sendMessage(textState.text)
-                                textState = TextFieldValue("") // Clear input
+                                onSendMessage(textState.text)
+                                textState = TextFieldValue("")
                             }
                         }
                     )
@@ -162,22 +160,22 @@ fun ChatInput(
                     style = MaterialTheme.typography.labelSmall,
                     color = if (textState.text.length > MAX_MESSAGE_LENGTH) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
-                        .align(Alignment.End) // Align counter to the end of the Column
+                        .align(Alignment.End)
                         .padding(top = 4.dp, end = 8.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp)) // Add some space before send button
+            Spacer(modifier = Modifier.width(8.dp))
 
             // Send Button
             IconButton(
                 onClick = {
                     if (isSendEnabled) {
-                        chatViewModel.sendMessage(textState.text)
-                        textState = TextFieldValue("") // Clear input after sending
+                        onSendMessage(textState.text)
+                        textState = TextFieldValue("")
                     }
                 },
-                enabled = isSendEnabled // Use the pre-calculated enabled state
+                enabled = isSendEnabled
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Send,

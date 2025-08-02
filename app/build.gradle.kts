@@ -1,10 +1,13 @@
-
+import org.gradle.kotlin.dsl.androidTestImplementation
+import org.gradle.kotlin.dsl.implementation
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.google.gms.google-services")
+    id("com.google.devtools.ksp")
+    kotlin("kapt")
 
 }
 
@@ -105,6 +108,15 @@ dependencies {
     implementation("com.android.volley:volley:1.2.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.android.identity:identity-jvm:202411.1")
+// Koin for dependency injection
+    implementation("io.insert-koin:koin-android:4.1.0")
+    implementation("io.insert-koin:koin-androidx-compose:4.1.0")
+    implementation("androidx.core:core-ktx:1.16.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+
 
 
 }
