@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,7 +36,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.ChatRoomListItem
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListUiState
@@ -53,6 +57,31 @@ fun ChatRoomListScreen(
     var newRoomName by remember { mutableStateOf("") }
     var newRecipientId by remember { mutableStateOf("") }
     var joinRoomId by remember { mutableStateOf("") }
+    var showShareRoomIdDialog by remember { mutableStateOf(false) }
+    var sharedRoomId by remember { mutableStateOf("") }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // NEW LaunchedEffect to listen for one-time events from the ViewModel
+    LaunchedEffect(key1 = Unit) {
+        chatRoomListViewModel.uiEvent.collectLatest { event ->
+            when (event) {
+                is ChatRoomListViewModel.UiEvent.RoomCreated -> {
+                    sharedRoomId = event.roomId
+                    showShareRoomIdDialog = true
+                }
+                is ChatRoomListViewModel.UiEvent.RoomJoined -> {
+                    onRoomClicked(event.roomId)
+                }
+                is ChatRoomListViewModel.UiEvent.ShowToast -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(event.message)
+                    }
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -64,12 +93,11 @@ fun ChatRoomListScreen(
                 )
             )
         },
-        // NEW: Animated Floating Action Button
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End
             ) {
-                // The two smaller FABs are only visible when the menu is expanded
                 AnimatedVisibility(
                     visible = isFabMenuExpanded,
                     enter = fadeIn(animationSpec = tween(durationMillis = 200)) + slideInVertically(
@@ -82,7 +110,6 @@ fun ChatRoomListScreen(
                     )
                 ) {
                     Column(horizontalAlignment = Alignment.End) {
-                        // FAB for joining a room
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(text = "Join Room", style = MaterialTheme.typography.labelLarge)
                             Spacer(Modifier.width(8.dp))
@@ -97,7 +124,6 @@ fun ChatRoomListScreen(
                             }
                         }
                         Spacer(Modifier.size(16.dp))
-                        // FAB for creating a room
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(text = "Create Room", style = MaterialTheme.typography.labelLarge)
                             Spacer(Modifier.width(8.dp))
@@ -114,8 +140,6 @@ fun ChatRoomListScreen(
                         Spacer(Modifier.size(16.dp))
                     }
                 }
-
-                // The main FAB that toggles the menu
                 FloatingActionButton(onClick = { isFabMenuExpanded = !isFabMenuExpanded }) {
                     Icon(
                         if (isFabMenuExpanded) Icons.Default.Add else Icons.Default.Add,
@@ -175,7 +199,7 @@ fun ChatRoomListScreen(
         }
     }
 
-    // This is the dialog that appears when the FAB is clicked
+
     if (showCreateRoomDialog) {
         AlertDialog(
             onDismissRequest = { showCreateRoomDialog = false },
@@ -200,9 +224,7 @@ fun ChatRoomListScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // Call the ViewModel function to create the room
                         chatRoomListViewModel.createNewRoom(newRoomName, newRecipientId)
-                        // Dismiss the dialog and reset the name
                         showCreateRoomDialog = false
                         newRoomName = ""
                         newRecipientId = ""
@@ -225,7 +247,6 @@ fun ChatRoomListScreen(
         )
     }
 
-    // NEW: AlertDialog for joining a room
     if (showJoinRoomDialog) {
         AlertDialog(
             onDismissRequest = { showJoinRoomDialog = false },
@@ -241,7 +262,7 @@ fun ChatRoomListScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        // TODO: Call ViewModel function to join the room here
+                        chatRoomListViewModel.joinRoom(joinRoomId)
                         showJoinRoomDialog = false
                         joinRoomId = ""
                     },
@@ -256,6 +277,38 @@ fun ChatRoomListScreen(
                     joinRoomId = ""
                 }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // NEW: Dialog to show the room ID for sharing
+    if (showShareRoomIdDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showShareRoomIdDialog = false
+                sharedRoomId = ""
+            },
+            title = { Text("Room Created!") },
+            text = {
+                Column {
+                    Text("Share this ID with your friend to join the room:")
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = sharedRoomId,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showShareRoomIdDialog = false
+                        sharedRoomId = ""
+                    }
+                ) {
+                    Text("OK")
                 }
             }
         )

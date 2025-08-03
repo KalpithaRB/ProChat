@@ -6,6 +6,8 @@ import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -26,25 +28,32 @@ class ChatRoomListViewModel(
 
     val uiState: StateFlow<ChatRoomListUiState> =
         flow {
-            // Start by emitting the loading state
             emit(ChatRoomListUiState.Loading)
-            // Listen to the real-time data from the repository
             chatRoomRepository.listenToChatRooms(currentUserId)
                 .collect { chatRooms ->
-                    // On each new list of rooms, emit the content state
                     emit(ChatRoomListUiState.Content(chatRooms))
                 }
         }
             .catch { e ->
-                // If any error occurs in the flow, emit the error state
                 Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
                 emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
             }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = ChatRoomListUiState.Loading // This initialValue is no longer needed but kept for robustness
+                initialValue = ChatRoomListUiState.Loading
             )
+
+    // NEW: SharedFlow to send one-time UI events (like showing a dialog)
+    private val _uiEvent = MutableSharedFlow<UiEvent>()
+    val uiEvent = _uiEvent.asSharedFlow()
+
+    sealed class UiEvent {
+        data class RoomCreated(val roomId: String) : UiEvent()
+        data class RoomJoined(val roomId: String) : UiEvent()
+        data class ShowToast(val message: String) : UiEvent()
+    }
+
 
     /**
      * Public function for the UI to call to mark a room as read.
@@ -60,19 +69,43 @@ class ChatRoomListViewModel(
      */
     fun createNewRoom(roomName: String, recipientId: String) {
         viewModelScope.launch {
-            // Basic validation to ensure we have a recipient
             if (recipientId.isNotBlank() && recipientId != currentUserId) {
-                // Combine the current user and the recipient into a list
                 val participantIds = listOf(currentUserId, recipientId)
                 chatRoomRepository.createChatRoom(roomName, participantIds)
                     .onSuccess { newRoomId ->
                         Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
-                        // TODO: Navigate to the new room.
+                        // NEW: Emit the event to the UI
+                        _uiEvent.emit(UiEvent.RoomCreated(newRoomId))
                     }.onFailure {
                         Log.e("ChatRoomListViewModel", "Failed to create new room", it)
+                        _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))
                     }
             } else {
                 Log.e("ChatRoomListViewModel", "Invalid recipient ID or self-chat attempt.")
+                _uiEvent.emit(UiEvent.ShowToast("Please enter a valid recipient ID."))
+            }
+        }
+    }
+
+    /**
+     * Allows the current user to join an existing chat room using its ID.
+     */
+    fun joinRoom(roomId: String) {
+        viewModelScope.launch {
+            if (roomId.isNotBlank()) {
+                chatRoomRepository.joinChatRoom(currentUserId, roomId)
+                    .onSuccess { joinedRoomId ->
+                        Log.d("ChatRoomListViewModel", "Successfully joined room: $joinedRoomId")
+                        // NEW: Emit an event to navigate to the joined room
+                        _uiEvent.emit(UiEvent.RoomJoined(joinedRoomId))
+                    }
+                    .onFailure {
+                        Log.e("ChatRoomListViewModel", "Failed to join room", it)
+                        _uiEvent.emit(UiEvent.ShowToast("Failed to join room. Please check the ID."))
+                    }
+            } else {
+                Log.e("ChatRoomListViewModel", "Room ID cannot be blank.")
+                _uiEvent.emit(UiEvent.ShowToast("Room ID cannot be blank."))
             }
         }
     }

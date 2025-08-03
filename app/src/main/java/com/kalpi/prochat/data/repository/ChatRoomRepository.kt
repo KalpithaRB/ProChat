@@ -138,4 +138,46 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+
+    /**
+     * Allows a user to join an existing chat room using its ID.
+     * It first verifies the room exists and then adds it to the user's chat list.
+     */
+    suspend fun joinChatRoom(userId: String, roomId: String): Result<String> {
+        return try {
+            // First, get the room's details from the main chatrooms collection
+            val roomDocument = db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .get()
+                .await()
+
+            if (!roomDocument.exists()) {
+                Log.e(TAG, "Chat room with ID $roomId does not exist.")
+                return Result.failure(Exception("Chat room not found."))
+            }
+
+            val roomName = roomDocument.getString("name") ?: "Unnamed Room"
+
+            // Now, add the room to the user's specific chat list
+            val userRoomData = mapOf(
+                "name" to roomName,
+                "lastMessage" to "Joined room.",
+                "lastTimestamp" to System.currentTimeMillis(),
+                "lastReadTimestamp" to System.currentTimeMillis()
+            )
+
+            db.collection(USER_CHATROOMS_COLLECTION)
+                .document(userId)
+                .collection(CHATROOMS_SUB_COLLECTION)
+                .document(roomId)
+                .set(userRoomData)
+                .await()
+
+            Log.d(TAG, "Successfully joined room with ID: $roomId")
+            Result.success(roomId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error joining chat room", e)
+            Result.failure(e)
+        }
+    }
 }
