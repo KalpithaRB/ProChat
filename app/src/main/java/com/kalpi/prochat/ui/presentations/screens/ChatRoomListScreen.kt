@@ -2,6 +2,7 @@ package com.kalpi.prochat.ui.presentations.screens
 
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,11 +19,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -180,12 +186,64 @@ fun ChatRoomListScreen(
                             verticalArrangement = Arrangement.spacedBy(1.dp)
                         ) {
                             items(items = state.chatRooms, key = { it.roomId }) { chatRoom ->
-                                ChatRoomListItem(
-                                    chatRoom = chatRoom,
-                                    onRoomClicked = {
-                                        chatRoomListViewModel.onRoomClicked(it)
-                                        // UPDATED: Pass both the ID and the name to the callback
-                                        onRoomClicked(chatRoom.roomId, chatRoom.name)
+                                // NEW: Wrap ChatRoomListItem in SwipeToDismissBox
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    confirmValueChange = {
+                                        // We're not implementing the logic now, so we always return false
+                                        it != SwipeToDismissBoxValue.Settled
+                                    }
+                                )
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    enableDismissFromStartToEnd = true, // Swipe right to delete
+                                    enableDismissFromEndToStart = true, // Swipe left to archive
+                                    // CORRECTED: Use 'backgroundContent' instead of 'background'
+                                    backgroundContent = {
+                                        // This is the UI that is shown behind the list item
+                                        val color by animateColorAsState(
+                                            when (dismissState.targetValue) {
+                                                SwipeToDismissBoxValue.StartToEnd -> Color.Red // Swiping from start (left)
+                                                SwipeToDismissBoxValue.EndToStart -> Color(0xFFF9A825) // Swiping from end (right)
+                                                SwipeToDismissBoxValue.Settled -> Color.Transparent
+                                            }, label = "SwipeBackground"
+                                        )
+                                        val icon = when (dismissState.targetValue) {
+                                            SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Delete // Delete icon
+                                            SwipeToDismissBoxValue.EndToStart -> Icons.Default.Archive // Archive icon
+                                            else -> null
+                                        }
+                                        val alignment = when (dismissState.targetValue) {
+                                            SwipeToDismissBoxValue.StartToEnd -> Alignment.CenterStart
+                                            SwipeToDismissBoxValue.EndToStart -> Alignment.CenterEnd
+                                            else -> Alignment.Center
+                                        }
+
+                                        Box(
+                                            Modifier
+                                                .fillMaxSize()
+                                                .background(color)
+                                                .padding(horizontal = 20.dp),
+                                            contentAlignment = alignment
+                                        ) {
+                                            if (icon != null) {
+                                                Icon(
+                                                    imageVector = icon,
+                                                    contentDescription = "Swipe Action",
+                                                    tint = Color.White
+                                                )
+                                            }
+                                        }
+                                    },
+                                    // The 'content' parameter name was correct, but I'll add the corrected block here for clarity
+                                    content = {
+                                        ChatRoomListItem(
+                                            chatRoom = chatRoom,
+                                            onRoomClicked = {
+                                                chatRoomListViewModel.onRoomClicked(chatRoom.roomId)
+                                                onRoomClicked(chatRoom.roomId, chatRoom.name)
+                                            }
+                                        )
                                     }
                                 )
                                 HorizontalDivider(
