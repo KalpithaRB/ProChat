@@ -109,4 +109,19 @@ class ChatRoomListViewModel(
             }
         }
     }
+
+    private val uniqueUserId = currentUserId
+
+    fun onToggleMute(roomId: String) {
+        viewModelScope.launch {
+            // We get the current list of rooms from the UI state
+            val currentRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
+
+            // Find the specific room the user clicked on
+            val chatRoomToMute = currentRooms.find { it.roomId == roomId } ?: return@launch
+
+            // Pass the userId to the repository function
+            chatRoomRepository.toggleMuteStatus(uniqueUserId, roomId, !chatRoomToMute.muted)
+        }
+    }
 }

@@ -65,7 +65,6 @@ fun ChatRoomListScreen(
     var joinRoomId by remember { mutableStateOf("") }
     var showShareRoomIdDialog by remember { mutableStateOf(false) }
     var sharedRoomId by remember { mutableStateOf("") }
-
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -186,7 +185,6 @@ fun ChatRoomListScreen(
                             verticalArrangement = Arrangement.spacedBy(1.dp)
                         ) {
                             items(items = state.chatRooms, key = { it.roomId }) { chatRoom ->
-                                // NEW: Wrap ChatRoomListItem in SwipeToDismissBox
                                 val dismissState = rememberSwipeToDismissBoxState(
                                     confirmValueChange = {
                                         // We're not implementing the logic now, so we always return false
@@ -209,8 +207,8 @@ fun ChatRoomListScreen(
                                             }, label = "SwipeBackground"
                                         )
                                         val icon = when (dismissState.targetValue) {
-                                            SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Delete // Delete icon
-                                            SwipeToDismissBoxValue.EndToStart -> Icons.Default.Archive // Archive icon
+                                            SwipeToDismissBoxValue.StartToEnd -> Icons.Default.Delete
+                                            SwipeToDismissBoxValue.EndToStart -> Icons.Default.Archive
                                             else -> null
                                         }
                                         val alignment = when (dismissState.targetValue) {
@@ -239,9 +237,13 @@ fun ChatRoomListScreen(
                                     content = {
                                         ChatRoomListItem(
                                             chatRoom = chatRoom,
-                                            onRoomClicked = {
-                                                chatRoomListViewModel.onRoomClicked(chatRoom.roomId)
-                                                onRoomClicked(chatRoom.roomId, chatRoom.name)
+                                            onRoomClicked = { roomId, roomName ->
+                                                chatRoomListViewModel.onRoomClicked(roomId)
+                                                onRoomClicked(roomId, roomName)
+                                            },
+                                            // NEW: Pass the ViewModel function to the list item
+                                            onToggleMuteClicked = { roomId ->
+                                                chatRoomListViewModel.onToggleMute(roomId)
                                             }
                                         )
                                     }

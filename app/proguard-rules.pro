@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep the ChatRoom data class to prevent ProGuard/R8 from renaming its fields.
+-keep class com.kalpi.prochat.data.model.ChatRoom {
+    <init>(...);
+    *;
+}

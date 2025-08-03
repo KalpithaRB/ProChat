@@ -10,6 +10,9 @@ data class ChatRoom(
     val name: String = "",
     val lastMessage: String? = null,
     val lastTimestamp: Long = 0L,
-    val lastReadTimestamp: Long = 0L, // New field to track what the user has seen
-    val unreadCount: Int = 0 // This will be calculated, not stored directly
+    val lastReadTimestamp: Long = 0L,
+    val unreadCount: Int = 0,
+    val muted: Boolean = false,
+
+
 )

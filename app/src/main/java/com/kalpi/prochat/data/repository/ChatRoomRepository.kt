@@ -180,4 +180,17 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+
+    suspend fun toggleMuteStatus(userId: String, roomId: String, isMuted: Boolean) {
+        try {
+            db.collection(USER_CHATROOMS_COLLECTION)
+                .document(userId)
+                .collection(CHATROOMS_SUB_COLLECTION)
+                .document(roomId)
+                .update("muted", isMuted)
+                .await()
+        } catch (e: Exception) {
+            Log.e("ChatRoomRepository", "Error toggling mute status for room $roomId", e)
+        }
+    }
 }

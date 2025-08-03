@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.kalpi.prochat.data.model.ChatRoom
@@ -20,12 +23,13 @@ import java.util.*
 @Composable
 fun ChatRoomListItem(
     chatRoom: ChatRoom,
-    onRoomClicked: (String) -> Unit
+    onRoomClicked: (String, String) -> Unit,
+    onToggleMuteClicked: (String) -> Unit
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onRoomClicked(chatRoom.roomId) },
+            .clickable { onRoomClicked(chatRoom.roomId, chatRoom.name) },
         color = MaterialTheme.colorScheme.background
     ) {
         Row(
@@ -46,7 +50,7 @@ fun ChatRoomListItem(
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                // Room name (we'll just use the roomId for now)
+                // Room name
                 Text(
                     text = if (chatRoom.name.isNotBlank()) chatRoom.name else "Unnamed Room",
                     style = MaterialTheme.typography.titleMedium,
@@ -64,6 +68,15 @@ fun ChatRoomListItem(
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
+            //Mute/UnMute icon
+            IconButton(onClick = { onToggleMuteClicked(chatRoom.roomId) }) {
+                Icon(
+                    // CORRECTED: Check 'chatRoom.muted' instead of 'chatRoom.isMuted'
+                    imageVector = if (chatRoom.muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                    contentDescription = if (chatRoom.muted) "Unmute Chat" else "Mute Chat",
+                    tint = if (chatRoom.muted) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             // Timestamp and unread count
             Column(
                 horizontalAlignment = Alignment.End
