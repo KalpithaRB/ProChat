@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import android.util.Log
 import kotlinx.coroutines.flow.flow
@@ -29,20 +30,21 @@ class ChatRoomListViewModel(
     val uiState: StateFlow<ChatRoomListUiState> =
         flow {
             emit(ChatRoomListUiState.Loading)
-            chatRoomRepository.listenToChatRooms(currentUserId)
-                .collect { chatRooms ->
-                    emit(ChatRoomListUiState.Content(chatRooms))
-                }
-        }
-            .catch { e ->
+            try {
+                chatRoomRepository.listenToChatRooms(currentUserId)
+                    .collect { chatRooms ->
+                        emit(ChatRoomListUiState.Content(chatRooms))
+                    }
+            } catch (e: Exception) {
                 Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
                 emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
             }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = ChatRoomListUiState.Loading
-            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = ChatRoomListUiState.Loading
+        )
+
 
     // NEW: SharedFlow to send one-time UI events (like showing a dialog)
     private val _uiEvent = MutableSharedFlow<UiEvent>()

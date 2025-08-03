@@ -34,32 +34,31 @@ class ChatRepository(private val db: FirebaseFirestore) {
                 .collection(MESSAGES_COLLECTION)
                 .document(message.id)
             messageDocRef.set(message).await()
-            messageDocRef.update("status", MessageStatus.SENT.name).await() // Update status after successful write
+            messageDocRef.update("status", MessageStatus.SENT.name).await()
 
-            // Step 2: Fetch the list of participants from the main chatroom document
+            // Step 2 & 3: Update the chatroom documents for EACH participant
             val chatRoomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
             val chatRoomDocument = chatRoomDocRef.get().await()
+            val participants = chatRoomDocument.get("participants") as? List<String> ?: emptyList()
+            val userChatroomsCollection = db.collection("user_chat_rooms")
 
-            if (!chatRoomDocument.exists()) {
-                Log.e(TAG, "Chat room document does not exist for ID: $roomId")
-                return Result.failure(Exception("Chat room not found"))
-            }
-
-            val participants = chatRoomDocument.get("participants") as? List<String>
-                ?: emptyList()
-
-            // Step 3: Update the chatroom document for EACH participant
-            val userChatroomsCollection = db.collection("user_chat_rooms") // Use the correct collection name
             for (participantId in participants) {
+                val updates = mutableMapOf<String, Any>()
+
+                // FIX: Use the Elvis operator to handle nullable text
+                updates["lastMessage"] = message.text ?: ""
+                updates["lastTimestamp"] = message.clientTimestamp
+
+                // NEW LOGIC: If the participant is the sender,
+                // we also update their lastReadTimestamp
+                if (participantId == message.senderId) {
+                    updates["lastReadTimestamp"] = message.clientTimestamp
+                }
+
                 userChatroomsCollection.document(participantId)
                     .collection("rooms")
                     .document(roomId)
-                    .update(
-                        mapOf(
-                            "lastMessage" to message.text,
-                            "lastTimestamp" to message.clientTimestamp
-                        )
-                    )
+                    .update(updates)
                     .await()
             }
 
@@ -70,8 +69,6 @@ class ChatRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
-
-
     // Placeholder for Day 3
     // fun getMessagesFlow(roomId: String): Flow<List<ChatMessage>> { ... }
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.callbackFlow
 
 class ChatRoomRepository(private val db: FirebaseFirestore) {
 
@@ -29,6 +30,8 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
      * and the subsequent map operator enriches each item with the unread count.
      */
     fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
+
+
         val roomsFlow = callbackFlow {
             val roomsCollection = db.collection(USER_CHATROOMS_COLLECTION)
                 .document(userId)
