@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.google.firebase.messaging.FirebaseMessaging
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import com.kalpi.prochat.data.repository.ChatRoomRepository
@@ -29,6 +30,7 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModelFactory
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
 import com.kalpi.prochat.ui.theme.ProChatTheme
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
