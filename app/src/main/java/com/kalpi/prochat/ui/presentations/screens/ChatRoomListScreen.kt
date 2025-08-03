@@ -48,7 +48,7 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListUiState
 @Composable
 fun ChatRoomListScreen(
     chatRoomListViewModel: ChatRoomListViewModel,
-    onRoomClicked: (String) -> Unit
+    onRoomClicked: (String, String) -> Unit
 ) {
     val uiState by chatRoomListViewModel.uiState.collectAsState()
     var showCreateRoomDialog by remember { mutableStateOf(false) }
@@ -72,7 +72,8 @@ fun ChatRoomListScreen(
                     showShareRoomIdDialog = true
                 }
                 is ChatRoomListViewModel.UiEvent.RoomJoined -> {
-                    onRoomClicked(event.roomId)
+                    // TODO: We need to get the room name here to navigate correctly
+                    // We'll address this in the next step
                 }
                 is ChatRoomListViewModel.UiEvent.ShowToast -> {
                     scope.launch {
@@ -182,9 +183,9 @@ fun ChatRoomListScreen(
                                 ChatRoomListItem(
                                     chatRoom = chatRoom,
                                     onRoomClicked = {
-                                        // When a room is clicked, also mark it as read
                                         chatRoomListViewModel.onRoomClicked(it)
-                                        onRoomClicked(it)
+                                        // UPDATED: Pass both the ID and the name to the callback
+                                        onRoomClicked(chatRoom.roomId, chatRoom.name)
                                     }
                                 )
                                 HorizontalDivider(
@@ -229,7 +230,6 @@ fun ChatRoomListScreen(
                         newRoomName = ""
                         newRecipientId = ""
                     },
-                    // The button is only enabled if both fields are not blank
                     enabled = newRoomName.isNotBlank() && newRecipientId.isNotBlank()
                 ) {
                     Text("Create")
@@ -238,7 +238,7 @@ fun ChatRoomListScreen(
             dismissButton = {
                 TextButton(onClick = {
                     showCreateRoomDialog = false
-                    newRoomName = "" // Also clear the text on dismiss
+                    newRoomName = ""
                     newRecipientId = ""
                 }) {
                     Text("Cancel")
@@ -282,7 +282,6 @@ fun ChatRoomListScreen(
         )
     }
 
-    // NEW: Dialog to show the room ID for sharing
     if (showShareRoomIdDialog) {
         AlertDialog(
             onDismissRequest = {
@@ -313,6 +312,4 @@ fun ChatRoomListScreen(
             }
         )
     }
-
-
 }

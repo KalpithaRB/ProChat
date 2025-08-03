@@ -38,7 +38,7 @@ import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageType
 import com.kalpi.prochat.data.model.MessageStatus
 import java.text.SimpleDateFormat
-
+import androidx.compose.ui.graphics.Color
 //import androidx.privacysandbox.tools.core.generator.build
 //import androidx.wear.compose.material.placeholder
 import com.kalpi.prochat.data.ChatItem
@@ -54,6 +54,8 @@ import com.kalpi.prochat.ui.chat.ChatUiState
 import java.util.Locale
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.chat.MessageStatusIcon
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 
 
 /**
@@ -71,7 +73,8 @@ fun ChatScreen(
     // recipientName: String = "Chat User",
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel, // Uses the default ViewModel factory
-    onBackClicked: () -> Unit
+    onBackClicked: () -> Unit,
+    roomName: String
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState() // For auto-scrolling
@@ -79,10 +82,9 @@ fun ChatScreen(
 
     val uploadProgress by chatViewModel.uploadProgress.collectAsState()
     // Coroutine scope for launching animations or other suspend functions if needed
-    // val coroutineScope = rememberCoroutineScope()
+     val coroutineScope = rememberCoroutineScope()
 
-    // Auto-scroll to the bottom when new messages arrive and the user is near the bottom
-    LaunchedEffect(uiState) {
+     LaunchedEffect(uiState) {
         if (uiState is ChatUiState.Content) {
             val messages = (uiState as ChatUiState.Content).messages
             if (messages.isNotEmpty()) {
@@ -98,11 +100,12 @@ fun ChatScreen(
                     IconButton(onClick = onBackClicked) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = "Back",
+                            tint = Color.White
                         )
                     }
                 },
-                title = { Text("Chat Pro" /* TODO: Use recipientName later */) },
+                title = { Text(roomName) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
@@ -361,100 +364,3 @@ fun MessageBubble(
 //}
 
 
-// A simplified ViewModel for preview purposes, or use a fake/mocking library for more complex scenarios
-//class PreviewChatViewModel(initialState: ChatUiState = ChatUiState.Loading) :
-//    ViewModel(),{
-//    private val _uiState = MutableStateFlow(initialState)
-//   val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow() // Mark as override
-//}
-
-// region Preview
-//@Preview(showBackground = true, name = "Chat Screen Light")
-//@Composable
-//fun ChatScreenPreview() {
-//    ProChatTheme(darkTheme = false) {
-//        val previewViewModel = remember { // remember it to avoid re-creation on recomposition
-//            PreviewChatViewModel(
-//                ChatUiState.Content(
-//                    listOf(
-//                        ChatMessage("1", ChatViewModel.OTHER_USER_ID, "Hello Preview!", System.currentTimeMillis(), MessageType.USER),
-//                        ChatMessage("2", ChatViewModel.CURRENT_USER_ID, "Hi there from Preview!", System.currentTimeMillis() - 5000, MessageType.USER)
-//                    )
-//                )
-//            )
-//        }
-//        ChatScreen(chatViewModel = previewViewModel)
-//    }
-//}
-//
-//@Preview(showBackground = true, name = "Chat Screen Dark")
-//@Composable
-//fun ChatScreenDarkPreview() {
-//    ProChatTheme(darkTheme = true) {
-//        val previewViewModel = remember {
-//            PreviewChatViewModel(
-//                ChatUiState.Content(
-//                    listOf(
-//                        ChatMessage("1", ChatViewModel.OTHER_USER_ID, "Dark mode preview!", System.currentTimeMillis(), MessageType.USER)
-//                    )
-//                )
-//            )
-//        }
-//        ChatScreen(chatViewModel = previewViewModel)
-//    }
-//}
-
-//@Preview(showBackground = true, name = "Message Bubble Sent")
-//@Composable
-//fun MessageBubbleSentPreview() {
-//    ProChatTheme {
-//        MessageBubble(
-//            message = ChatMessage(
-//                id = "1",
-//                senderId = ChatViewModel.CURRENT_USER_ID,
-//                text = "This is a sent message example. It can be quite long to test wrapping.",
-//                // clientTimestamp = System.currentTimeMillis()
-//            ),
-//            currentUserId = ChatViewModel.CURRENT_USER_ID,
-//            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
-//        )
-//    }
-//}
-
-
-//@Preview(showBackground = true, name = "Message Bubble Received")
-//@Composable
-//fun MessageBubbleReceivedPreview() {
-//    ProChatTheme {
-//        MessageBubble(
-//            message = ChatMessage(
-//                id = "2",
-//                senderId = ChatViewModel.OTHER_USER_ID, // Make sure OTHER_USER_ID is defined or use a string
-//                text = "This is a received message! Shorter this time.",
-//                // clientTimestamp = System.currentTimeMillis() // Assuming your ChatMessage constructor uses this
-//                // If your constructor still has 'timestamp', adjust accordingly or update ChatMessage
-//            ),
-//            currentUserId = ChatViewModel.CURRENT_USER_ID,
-//            onRetryClick = { /* Preview: No action needed for retry */ } // Add this
-//        )
-//    }
-//}
-
-
-//@Preview(showBackground = true, name = "System Message")
-//@Composable
-//fun SystemMessagePreview() {
-//    ProChatTheme {
-//        MessageBubble(
-//            message = ChatMessage(
-//                id = "system1",
-//                senderId = "system", // Or your system sender ID
-//                text = "User Has Joined The Chat",
-//                // clientTimestamp = System.currentTimeMillis(),
-//                messageType = MessageType.SYSTEM
-//            ),
-//            currentUserId = ChatViewModel.CURRENT_USER_ID, // Or a dummy ID for system messages
-//            onRetryClick = { /* Preview: No action needed for retry, system messages might not fail/retry */ } // Add this
-//        )
-//    }
-//}

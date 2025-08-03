@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.kalpi.prochat.ui.presentations.screens.ChatScreen
 import com.kalpi.prochat.ui.theme.ProChatTheme
@@ -18,7 +20,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.viewmodel.compose.viewModel
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import com.kalpi.prochat.ui.presentations.screens.ChatRoomListScreen
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
@@ -44,6 +47,9 @@ class MainActivity : ComponentActivity() {
                     // If it's null, we display the ChatRoomListScreen.
                     var currentRoomId: String? by remember { mutableStateOf(null) }
 
+                    // We also need to remember the room name for the top bar.
+                    var currentRoomName: String? by remember { mutableStateOf(null) }
+
                     // We need a conditional display based on our navigation state
                     if (currentRoomId == null) {
                         // Display the list of chat rooms
@@ -53,10 +59,9 @@ class MainActivity : ComponentActivity() {
                         )
                         ChatRoomListScreen(
                             chatRoomListViewModel = chatRoomListViewModel,
-                            onRoomClicked = { roomId ->
-                                // When a room is clicked, update the state to the selected room ID.
-                                // This will cause a recomposition, showing the ChatScreen.
+                            onRoomClicked = { roomId, roomName ->
                                 currentRoomId = roomId
+                                currentRoomName = roomName
                             }
                         )
                     } else {
@@ -67,10 +72,10 @@ class MainActivity : ComponentActivity() {
                         )
                         ChatScreen(
                             chatViewModel = chatViewModel,
+                            roomName = currentRoomName ?: "Chat Pro",
                             onBackClicked = {
-                                // When the back button is clicked, reset the state to null.
-                                // This will cause a recomposition, returning to the list screen.
                                 currentRoomId = null
+                                currentRoomName = null
                             }
                         )
                     }
