@@ -28,20 +28,49 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
     suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
         return try {
-            val docRef = db.collection(CHATROOMS_COLLECTION )
+            // Step 1: Save the message to the chatroom's message subcollection
+            val messageDocRef = db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
                 .collection(MESSAGES_COLLECTION)
-                .document(message.id) // Use the client-generated message.id as the document ID
-            // First, write the message to the document
-            docRef.set(message).await()
-            // 2. Update the status to SENT. This is the crucial step.
-            docRef.update("status", MessageStatus.SENT.name).await()
+                .document(message.id)
+            messageDocRef.set(message).await()
+            messageDocRef.update("status", MessageStatus.SENT.name).await() // Update status after successful write
+
+            // Step 2: Fetch the list of participants from the main chatroom document
+            val chatRoomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
+            val chatRoomDocument = chatRoomDocRef.get().await()
+
+            if (!chatRoomDocument.exists()) {
+                Log.e(TAG, "Chat room document does not exist for ID: $roomId")
+                return Result.failure(Exception("Chat room not found"))
+            }
+
+            val participants = chatRoomDocument.get("participants") as? List<String>
+                ?: emptyList()
+
+            // Step 3: Update the chatroom document for EACH participant
+            val userChatroomsCollection = db.collection("user_chat_rooms") // Use the correct collection name
+            for (participantId in participants) {
+                userChatroomsCollection.document(participantId)
+                    .collection("rooms")
+                    .document(roomId)
+                    .update(
+                        mapOf(
+                            "lastMessage" to message.text,
+                            "lastTimestamp" to message.clientTimestamp
+                        )
+                    )
+                    .await()
+            }
+
+            Log.d(TAG, "Message sent and chatroom documents updated for all participants in room: $roomId")
             Result.success(Unit)
         } catch (e: Exception) {
-            // Log.e("ChatRepository", "Error sending message", e) // Good practice to log
+            Log.e(TAG, "Error sending message or updating chatroom documents", e)
             Result.failure(e)
         }
     }
+
 
     // Placeholder for Day 3
     // fun getMessagesFlow(roomId: String): Flow<List<ChatMessage>> { ... }

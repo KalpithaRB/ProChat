@@ -70,12 +70,17 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
      */
     private suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int {
         return try {
-            val querySnapshot = db.collection(MESSAGES_COLLECTION)
+            Log.d(TAG, "Getting unread count for room: $roomId. Comparing with lastReadTimestamp: $lastReadTimestamp")
+
+            val querySnapshot = db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
                 .collection(MESSAGES_COLLECTION)
                 .whereGreaterThan("clientTimestamp", lastReadTimestamp)
                 .get()
                 .await()
+
+            Log.d(TAG, "Query returned ${querySnapshot.size()} new messages for room: $roomId")
+
             querySnapshot.size()
         } catch (e: Exception) {
             Log.e(TAG, "Error getting unread count for room $roomId", e)

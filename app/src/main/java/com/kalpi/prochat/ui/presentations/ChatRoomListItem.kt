@@ -1,6 +1,7 @@
 package com.kalpi.prochat.ui.presentations
 
 
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +27,9 @@ fun ChatRoomListItem(
     onRoomClicked: (String, String) -> Unit,
     onToggleMuteClicked: (String) -> Unit
 ) {
+    // Add this log statement here
+    Log.d("ChatRoomListItem", "Rendering room '${chatRoom.name}', unreadCount: ${chatRoom.unreadCount}")
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -90,10 +94,14 @@ fun ChatRoomListItem(
                 Spacer(modifier = Modifier.height(4.dp))
                 // Unread count badge
                 if (chatRoom.unreadCount > 0) {
-                    BadgedBox(badge = {
-                        Badge { Text(text = chatRoom.unreadCount.toString()) }
-                    }) {
-                        // Badge content
+                    Spacer(modifier = Modifier.weight(1f))
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            text = chatRoom.unreadCount.toString(),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                 }
             }
