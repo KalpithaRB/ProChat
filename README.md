@@ -3,6 +3,7 @@
 ## 📌 Overview
 
 ProChat is a modern Android chat application built with Kotlin, Jetpack Compose, and Firebase, designed to demonstrate scalable real-time communication and clean architecture principles. The app integrates essential chat features like text and image messaging, real-time synchronization, and push notifications, with a roadmap toward advanced features like presence and typing indicators.
+
 ---
 
 ## ✨ Features Implemented 
