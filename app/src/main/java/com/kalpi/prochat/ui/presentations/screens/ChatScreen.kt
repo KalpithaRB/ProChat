@@ -1,6 +1,11 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,12 +51,14 @@ import com.kalpi.prochat.data.ChatItem
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.unit.sp
 import com.kalpi.prochat.ui.chat.ChatInput
 import com.kalpi.prochat.ui.chat.ChatUiState
+import kotlinx.coroutines.launch
 import java.util.Locale
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.chat.MessageStatusIcon
@@ -85,6 +92,12 @@ fun ChatScreen(
     // Coroutine scope for launching animations or other suspend functions if needed
      val coroutineScope = rememberCoroutineScope()
 
+    val showScrollToBottomButton by remember {
+        derivedStateOf {
+            !listState.canScrollForward
+        }
+    }
+
     // NEW: LaunchedEffect to mark messages as read when the screen is shown
     LaunchedEffect(key1 = chatViewModel.currentRoomId) {
         Log.d("ChatScreen", "Entering ChatScreen for room ${chatViewModel.currentRoomId}. Marking messages as read.")
@@ -117,7 +130,6 @@ fun ChatScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 )
-                // TODO: Add back button or other actions if needed
             )
         },
         bottomBar = {
@@ -208,6 +220,35 @@ fun ChatScreen(
                             }
                         }
                     }
+                }
+            }
+
+
+            AnimatedVisibility(
+                visible = !showScrollToBottomButton, // CORRECTED: Show when at the bottom
+                enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
+                exit = fadeOut() + slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 80.dp, end = 16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            val messages = (uiState as? ChatUiState.Content)?.messages
+                            if (messages != null && messages.isNotEmpty()) {
+                                listState.animateScrollToItem(messages.size - 1)
+                            }
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = "Scroll to bottom"
+                    )
                 }
             }
         }
