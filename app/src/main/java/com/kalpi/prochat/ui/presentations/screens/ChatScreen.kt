@@ -1,5 +1,6 @@
 package com.kalpi.prochat.ui.presentations.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -83,6 +84,12 @@ fun ChatScreen(
     val uploadProgress by chatViewModel.uploadProgress.collectAsState()
     // Coroutine scope for launching animations or other suspend functions if needed
      val coroutineScope = rememberCoroutineScope()
+
+    // NEW: LaunchedEffect to mark messages as read when the screen is shown
+    LaunchedEffect(key1 = chatViewModel.currentRoomId) {
+        Log.d("ChatScreen", "Entering ChatScreen for room ${chatViewModel.currentRoomId}. Marking messages as read.")
+        chatViewModel.markRoomAsRead()
+    }
 
      LaunchedEffect(uiState) {
         if (uiState is ChatUiState.Content) {
@@ -247,17 +254,14 @@ fun MessageBubble(
     uploadProgress: Int?,
     onRetryClick: (ChatMessage) -> Unit
 ) {
-    // This is the CRITICAL part for alignment. If senderId and currentUserId are the same, it's 'me'.
     val isCurrentUser = message.senderId == currentUserId
 
-    // Main container to align the bubble left or right
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp),
         contentAlignment = if (isCurrentUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
-        // The bubble content itself
         Box(
             modifier = Modifier
                 .widthIn(max = 300.dp)
@@ -267,7 +271,6 @@ fun MessageBubble(
                 .padding(10.dp)
         ) {
             Column {
-                // Main message content
                 if (message.messageType == MessageType.SYSTEM) {
                     Text(
                         text = message.text ?: "",
@@ -301,10 +304,8 @@ fun MessageBubble(
                         fontSize = 12.sp
                     )
 
-                    // Spacer between time and icon
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    // Status Icon (only for current user)
                     if (isCurrentUser) {
                         MessageStatusIcon(
                             status = message.status,
@@ -317,50 +318,5 @@ fun MessageBubble(
         }
     }
 }
-
-
-
-//@Composable
-//fun MessageStatusIcon(
-//    status: MessageStatus,
-//    onRetry: () -> Unit,
-//    isCurrentUser: Boolean // To potentially adjust icon color or style
-//) {
-//    val iconSize = 16.dp
-//    val iconTint = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-//    else MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-//
-//    when (status) {
-//        MessageStatus.SENDING -> {
-//            Icon(
-//                imageVector = Icons.Outlined.Schedule,
-//                contentDescription = "Sending message",
-//                modifier = Modifier.size(iconSize),
-//                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-//            )
-//            // Or use a small CircularProgressIndicator:
-//            // CircularProgressIndicator(modifier = Modifier.size(iconSize), strokeWidth = 1.5.dp)
-//        }
-//        MessageStatus.SENT -> {
-//            // Optionally show a "sent" tick, or nothing for a cleaner look
-//            Icon(
-//                imageVector = Icons.Outlined.CheckCircle, // Or a single tick
-//                contentDescription = "Message sent",
-//                modifier = Modifier.size(iconSize),
-//                tint = MaterialTheme.colorScheme.secondary // Or a more subtle color
-//            )
-//        }
-//        MessageStatus.FAILED -> {
-//            Icon(
-//                imageVector = Icons.Filled.Error, // Or Icons.Filled.Refresh to imply retry directly
-//                contentDescription = "Message failed, tap to retry",
-//                modifier = Modifier
-//                    .size(iconSize)
-//                    .clickable(onClick = onRetry),
-//                tint = MaterialTheme.colorScheme.error
-//            )
-//        }
-//    }
-//}
 
 

@@ -1,5 +1,8 @@
 package com.kalpi.prochat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +34,9 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import android.util.Log
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,14 +51,24 @@ class MainActivity : ComponentActivity() {
                     // Get the unique user ID, which is needed for all ViewModels
                     val uniqueUserId = ChatViewModel.getOrCreateUserId(LocalContext.current)
 
+                    val initialRoomId: String? = intent?.data?.lastPathSegment
+                    val initialRoomName: String? = if (initialRoomId != null) "Chat Pro" else null
+                    Log.d("MainActivity", "Initial room from deep link: $initialRoomId")
+
                     // Navigation State: Holds the ID of the chat room we are currently viewing.
                     // If it's null, we display the ChatRoomListScreen.
-                    var currentRoomId: String? by remember { mutableStateOf(null) }
+                    var currentRoomId: String? by remember { mutableStateOf(initialRoomId) }
 
-                    // We also need to remember the room name for the top bar.
-                    var currentRoomName: String? by remember { mutableStateOf(null) }
+                    // room name for the top bar.
+                    var currentRoomName: String? by remember { mutableStateOf(initialRoomName) }
 
-                    // We need a conditional display based on our navigation state
+                    DisposableEffect(currentRoomId) {
+                        AppState.currentChatRoomId = currentRoomId
+                        onDispose {
+                            AppState.currentChatRoomId = null
+                        }
+                    }
+
                     if (currentRoomId == null) {
                         // Display the list of chat rooms
                         val chatRoomRepository = ChatRoomRepository(firestore)
@@ -69,8 +85,14 @@ class MainActivity : ComponentActivity() {
                     } else {
                         // Display the chat screen for the selected room
                         val chatRepository = ChatRepository(firestore)
+                        val chatRoomRepository = ChatRoomRepository(firestore)
                         val chatViewModel: ChatViewModel = viewModel(
-                            factory = ChatViewModelFactory(chatRepository, currentRoomId!!, uniqueUserId)
+                            factory = ChatViewModelFactory(
+                                chatRepository,
+                                chatRoomRepository,
+                                currentRoomId!!,
+                                uniqueUserId
+                            )
                         )
                         ChatScreen(
                             chatViewModel = chatViewModel,
@@ -81,6 +103,12 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
                 }
             }
         }

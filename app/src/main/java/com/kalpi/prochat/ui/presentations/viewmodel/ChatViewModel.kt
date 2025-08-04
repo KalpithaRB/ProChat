@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.ChatItem
+import com.kalpi.prochat.data.repository.ChatRoomRepository
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
@@ -34,13 +35,12 @@ import java.util.UUID
  */
 
 class ChatViewModel (
-    private val chatRepository: ChatRepository, // Injected
-    private val currentRoomId: String,
+    private val chatRepository: ChatRepository,
+    private val chatRoomRepository: ChatRoomRepository,
+    val currentRoomId: String,
     val currentUserId: String
 
 ): ViewModel() {
-    // A simple way to distinguish the "current user" for dummy data styling.
-    // In a real app, this would come from an authentication service.
     companion object {
 //        const val CURRENT_USER_ID = "currentUser"
 
@@ -58,8 +58,6 @@ class ChatViewModel (
     }
 
 
-    // Private mutable state flow to hold the current UI state.
-    // Starts in a Loading state, then transitions to Content with dummy messages.
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
     /**
      * Publicly exposed [kotlinx.coroutines.flow.StateFlow] of the [ChatUiState].
@@ -162,6 +160,7 @@ class ChatViewModel (
     }
 
 
+
     fun retrySendMessage(failedMessage: ChatMessage) {
         viewModelScope.launch {
             chatRepository.sendMessage(currentRoomId, failedMessage.copy(status = MessageStatus.SENDING))
@@ -189,6 +188,15 @@ class ChatViewModel (
             chatItems.add(ChatItem.Message(message))
         }
         return ChatUiState.Content(chatItems)
+    }
+
+    fun markRoomAsRead() {
+        viewModelScope.launch {
+             val result = chatRoomRepository.markRoomAsRead(currentUserId, currentRoomId)
+            if (result.isFailure) {
+                Log.e(TAG, "Failed to mark room as read: ${result.exceptionOrNull()?.message}")
+            }
+        }
     }
 
 }

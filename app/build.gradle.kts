@@ -108,7 +108,7 @@ dependencies {
     implementation("com.android.volley:volley:1.2.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.android.identity:identity-jvm:202411.1")
-// Koin for dependency injection
+
     implementation("io.insert-koin:koin-android:4.1.0")
     implementation("io.insert-koin:koin-androidx-compose:4.1.0")
     implementation("androidx.core:core-ktx:1.16.0")
@@ -117,6 +117,9 @@ dependencies {
     implementation("androidx.room:room-runtime:2.7.2")
     implementation("androidx.room:room-ktx:2.7.2")
 
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+    implementation("com.squareup.okhttp3:okhttp:5.1.0")
 
 
 }
