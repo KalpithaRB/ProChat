@@ -2,11 +2,10 @@
 
 ## 📌 Overview
 
-**ProChat** is a modern Android chat application built using **Kotlin** and **Jetpack Compose**, following the **MVVM (Model-View-ViewModel)** architecture. This document outlines the Day 1 deliverables, focused on building the **chat screen UI** using dummy data and managing screen state effectively with Compose and StateFlow.
-
+ProChat is a modern Android chat application built with Kotlin, Jetpack Compose, and Firebase, designed to demonstrate scalable real-time communication and clean architecture principles. The app integrates essential chat features like text and image messaging, real-time synchronization, and push notifications, with a roadmap toward advanced features like presence and typing indicators.
 ---
 
-## ✨ Features Implemented (Day 1 & Day 2)
+## ✨ Features Implemented 
 
 - **Chat Screen UI**
   - Scrollable message list using `LazyColumn`
@@ -27,7 +26,10 @@
   - Messages are generated locally using hardcoded values
   - Includes a mix of user messages, system messages, and simulated time shifts
  
-  
+- **FCM Setup (Client)**
+  - Firebase Cloud Messaging integrated in Android app. Device successfully retrieves FCM token and handles notifications via FirebaseMessagingService.
+  - Notifications can be received and displayed on the device from Firebase Console.
+
 *   **Message Sending:** 
     *   Users can type messages and send them. Messages are stored in Firebase Firestore.
 *   **Real-time UI Updates (Local):**
@@ -188,7 +190,13 @@ Known Issues:
 
 🔁 Cloudinary used for media storage as alternative
 
-⚠️ Real-time receiving of messages (addSnapshotListener) will be implemented in Day 3
+🔓 Server Integration Pending: Currently, notifications can only be triggered through the Firebase Console for testing. Full server-side integration (storing tokens and sending notifications dynamically) will complete Phase 2.
+
+🔁 Deep Linking: Tapping a notification does not yet navigate to the relevant chatroom. This will be addressed with server-triggered data payloads.
+
+🔓Read/Unread State: Updating lastReadTimestamp or marking messages as isRead upon entering a chatroom is still in progress.
+
+🔁 Stretch Features: Presence tracking and typing indicators are planned but deferred until core notification and read/unread flows are finalized.
 
 ---
 
@@ -205,6 +213,35 @@ Shown in chat using Coil with CircularProgressIndicator during upload
 
 🔁 Replaced Firebase Storage with Cloudinary due to Spark Plan limitations
 
+---
+
+Day 6 – Push Notification + Read Status
+Feature Matrix
+Feature	Status	Notes
+FCM Setup (Client)	✅	Firebase Cloud Messaging integrated in Android app. Device successfully retrieves FCM token and handles notifications via FirebaseMessagingService.
+Test Notifications from Firebase Console	✅	Notifications can be received and displayed on the device from Firebase Console.
+Server-Triggered Notifications	⚠️	Pending Phase 2. Server needs to store tokens and send targeted notifications using Firebase Admin SDK.
+Data Payload Support (roomId, messagePreview, senderId)	⚠️	To be implemented in Phase 2 when server logic is updated.
+Deep Link to Chatroom on Notification Tap	⚠️	Pending implementation.
+Read/Unread State Update on Screen Entry	⚠️	Will be integrated alongside deep linking and server payload handling.
+Presence (/presence/{userId})	❌	Stretch task, not yet implemented.
+Typing Indicator (/typing/{roomId}/{userId})	❌
+
+---
+How it Works 
+How It Works: Push Notification Flow
+
+[Android App] --(Generates FCM Token)--> [Firebase Cloud Messaging (FCM)]
+
+[Server] <--(Receives and stores tokens)-- [Android App]
+
+[Server] --(Sends message with data payload)--> [FCM] --(Delivers notification)--> [Target Device]
+
+[Android App] --(Handles notification via FirebaseMessagingService)--> 
+    - Display notification (even in background)
+    - Deep link to correct chatroom (planned)
+    - Update read/unread state (planned)
+    
 ---
 
 ## 🚀 Running the App
@@ -225,4 +262,24 @@ Shown in chat using Coil with CircularProgressIndicator during upload
     *   In the Firebase console, enable **Firestore Database**. When prompted, create the database in **Native Mode** and choose a region. For initial testing, the default security rules (or temporarily open rules) can be used, as mentioned above.
 * Open the project in Android Studio.
 * Build and run the app on an emulator or physical device
+
+* *Setup Instructions (Specific to Push Notifications)*
+Enable Firebase Cloud Messaging (FCM):
+
+Ensure FCM is enabled in your Firebase project.
+
+Add the google-services.json file to your app/ directory (already required for previous features).
+
+Android Dependencies:
+
+`implementation "com.google.firebase:firebase-messaging:<latest_version>"`
+Add apply plugin: `'com.google.gms.google-services'` at the bottom of your app-level build.gradle.
+
+Service Implementation:
+
+Create a FirebaseMessagingService to handle token generation and incoming notifications.
+
+Override onNewToken() to retrieve the device's FCM token.
+
+Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
