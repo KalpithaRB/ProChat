@@ -104,6 +104,10 @@ class MainActivity : ComponentActivity() {
                             onBackClicked = {
                                 currentRoomId = null
                                 currentRoomName = null
+                            },
+                            onDeleteSuccess = {
+                                currentRoomId = null
+                                currentRoomName = null
                             }
                         )
                     }

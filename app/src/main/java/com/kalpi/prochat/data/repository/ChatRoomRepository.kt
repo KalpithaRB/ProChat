@@ -201,4 +201,24 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
             Log.e("ChatRoomRepository", "Error toggling mute status for room $roomId", e)
         }
     }
+
+    suspend fun deleteChatroomForUser(roomId: String, userId: String): Result<Unit> =
+        try {
+            // First, delete all messages in the chatroom
+            val messagesCollection = db.collection("chatrooms").document(roomId).collection("messages")
+            val batch = db.batch()
+            val messagesSnapshot = messagesCollection.get().await()
+
+            for (document in messagesSnapshot.documents) {
+                batch.delete(document.reference)
+            }
+            batch.commit().await() // Commit the deletion of all messages
+
+            // Then, remove the chatroom document reference from the user's chatroom list
+            db.collection("users").document(userId).collection("chatrooms").document(roomId).delete().await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
 }

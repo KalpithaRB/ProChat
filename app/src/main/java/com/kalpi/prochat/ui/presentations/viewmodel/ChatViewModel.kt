@@ -272,4 +272,19 @@ class ChatViewModel (
         return stringBuilder.toString()
     }
 
+    private val _deletionSuccess = MutableSharedFlow<Unit>()
+    val deletionSuccess: SharedFlow<Unit> = _deletionSuccess
+
+    fun deleteChatroom() {
+        viewModelScope.launch {
+            val result = chatRoomRepository.deleteChatroomForUser(currentRoomId, currentUserId)
+            if (result.isSuccess) {
+                _deletionSuccess.emit(Unit) // Signal the UI to navigate back
+            } else {
+                Log.e(TAG, "Failed to delete chatroom: ${result.exceptionOrNull()?.message}")
+                // TODO: You might want to show a toast or a snackbar with the error
+            }
+        }
+    }
+
 }

@@ -89,6 +89,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     chatViewModel: ChatViewModel, // Uses the default ViewModel factory
     onBackClicked: () -> Unit,
+    onDeleteSuccess: () -> Unit,
     roomName: String
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
@@ -104,8 +105,19 @@ fun ChatScreen(
             !listState.canScrollForward
         }
     }
-
     val context = LocalContext.current
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // Use a LaunchedEffect to listen for the navigation event
+    // that the ViewModel will emit after a successful deletion.
+    LaunchedEffect(Unit) {
+        chatViewModel.deletionSuccess.collect {
+            onDeleteSuccess()
+        }
+    }
+
+
     LaunchedEffect(Unit) {
         chatViewModel.exportFileUri.collect { uri ->
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -163,8 +175,7 @@ fun ChatScreen(
 
                     // Dropdown menu
                     DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
+                        expanded = expanded, onDismissRequest = { expanded = false }
                     ) {
                         // "Export Chat" menu item
                         DropdownMenuItem(
@@ -186,7 +197,7 @@ fun ChatScreen(
                             text = { Text("Delete Chatroom") },
                             onClick = {
                                 expanded = false
-                                // TODO: Implement delete chatroom logic here
+                                showDeleteDialog = true
                             },
                             leadingIcon = {
                                 Icon(
@@ -317,6 +328,28 @@ fun ChatScreen(
                         contentDescription = "Scroll to bottom"
                     )
                 }
+            }
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Delete Chatroom") },
+                    text = { Text("Are you sure you want to delete this chatroom? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showDeleteDialog = false
+                                chatViewModel.deleteChatroom() // Call the ViewModel function
+                            }
+                        ) {
+                            Text("Delete")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }
