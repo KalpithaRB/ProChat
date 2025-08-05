@@ -64,6 +64,8 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import com.kalpi.prochat.ui.chat.TextMessage
+import com.kalpi.prochat.ui.chat.ImageMessage
 
 
 /**
@@ -312,25 +314,43 @@ fun MessageBubble(
                 .padding(10.dp)
         ) {
             Column {
-                if (message.messageType == MessageType.SYSTEM) {
-                    Text(
-                        text = message.text ?: "",
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
-                    )
-                } else {
-                    message.text?.let { textContent ->
-                        Text(
-                            text = textContent,
-                            color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontSize = 16.sp
+                // CORRECTED LOGIC: Use a 'when' statement to render the correct content
+                when (message.messageType) {
+                    MessageType.TEXT -> {
+                        message.text?.let { textContent ->
+                            TextMessage(
+                                text = textContent,
+                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                    MessageType.IMAGE -> {
+                        ImageMessage(
+                            message = message,
+                            isCurrentUser = isCurrentUser,
+                            uploadProgress = uploadProgress,
+                            onRetryClick = onRetryClick
                         )
                     }
-
-                    // A spacer is good practice to separate content from meta-data
-                    Spacer(modifier = Modifier.height(4.dp))
+                    MessageType.SYSTEM -> {
+                        Text(
+                            text = message.text ?: "",
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp
+                        )
+                    }
+                    MessageType.USER -> {
+                        // This case can be treated the same as TEXT, or handled with a generic text message if needed
+                        message.text?.let { textContent ->
+                            TextMessage(
+                                text = textContent,
+                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
                 }
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Row for time and status icon, aligned to the bottom end of the bubble
                 Row(
