@@ -53,7 +53,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -148,11 +150,50 @@ fun ChatScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    IconButton(onClick = { chatViewModel.onExportChatClicked() }) {
+                    var expanded by remember { mutableStateOf(false) }
+
+                    // Three-dot menu icon
+                    IconButton(onClick = { expanded = true }) {
                         Icon(
-                            imageVector = Icons.Outlined.Download,
-                            contentDescription = "Export Chat",
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More options",
                             tint = Color.White
+                        )
+                    }
+
+                    // Dropdown menu
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        // "Export Chat" menu item
+                        DropdownMenuItem(
+                            text = { Text("Export Chat") },
+                            onClick = {
+                                expanded = false
+                                chatViewModel.onExportChatClicked()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Download,
+                                    contentDescription = "Export"
+                                )
+                            }
+                        )
+
+                        // "Delete Chat" placeholder menu item
+                        DropdownMenuItem(
+                            text = { Text("Delete Chatroom") },
+                            onClick = {
+                                expanded = false
+                                // TODO: Implement delete chatroom logic here
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = "Delete Chatroom"
+                                )
+                            }
                         )
                     }
                 }
