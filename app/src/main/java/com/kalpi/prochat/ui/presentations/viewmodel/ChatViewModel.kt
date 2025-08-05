@@ -29,10 +29,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
+import java.net.URL
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import java.net.HttpURLConnection
 
 /**
  * ViewModel for the ChatScreen.
@@ -283,6 +288,98 @@ class ChatViewModel (
             } else {
                 Log.e(TAG, "Failed to delete chatroom: ${result.exceptionOrNull()?.message}")
                 // TODO: You might want to show a toast or a snackbar with the error
+            }
+        }
+    }
+
+    // A function to handle ZIP export
+    fun onExportChatAsZipClicked() {
+        val currentMessages = (uiState.value as? ChatUiState.Content)?.messages
+        if (currentMessages.isNullOrEmpty()) {
+            // You can emit an error or a toast message here
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val appCacheDir = getApplication<Application>().cacheDir
+                val zipFileName = "chat_export_${currentRoomId}.zip"
+                val zipFile = File(appCacheDir, zipFileName)
+
+                // Prepare a text file with chat content
+                val textFileName = "chat_transcript.txt"
+                val textFile = File(appCacheDir, textFileName)
+                val fileContent = createChatTextContent(currentMessages)
+                FileOutputStream(textFile).use { it.write(fileContent.toByteArray()) }
+
+                // Download all image files
+                val imageFiles = mutableListOf<File>()
+                for (chatItem in currentMessages) {
+                    if (chatItem is ChatItem.Message && chatItem.message.messageType == MessageType.IMAGE) {
+                        val imageUrl = chatItem.message.imageUrl
+                        if (!imageUrl.isNullOrBlank()) {
+                            val imageFileName = imageUrl.substringAfterLast("/")
+                            val imageFile = File(appCacheDir, imageFileName)
+                            downloadImageToFile(imageUrl, imageFile)
+                            imageFiles.add(imageFile)
+                        }
+                    }
+                }
+
+                // Zip everything together
+                zipFiles(zipFile, textFile, imageFiles)
+
+                //Clean up temporary files
+                textFile.delete()
+                imageFiles.forEach { it.delete() }
+
+                // Emit the ZIP file URI for sharing
+                val uri = FileProvider.getUriForFile(
+                    getApplication(),
+                    "${getApplication<Application>().packageName}.fileprovider",
+                    zipFile
+                )
+                _exportFileUri.emit(uri)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error exporting chat as ZIP", e)
+            }
+        }
+    }
+
+    // Helper function to download an image from a URL
+    private fun downloadImageToFile(url: String, file: File) {
+        try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connect()
+            connection.inputStream.use { inputStream ->
+                FileOutputStream(file).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download image from $url", e)
+            // You might want to handle this gracefully, e.g., save a placeholder file
+        }
+    }
+
+    // Helper function to create the ZIP file
+    private fun zipFiles(zipFile: File, textFile: File, imageFiles: List<File>) {
+        ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
+            // Add the text file to the zip
+            FileInputStream(textFile).use { fileIn ->
+                val zipEntry = ZipEntry(textFile.name)
+                zipOut.putNextEntry(zipEntry)
+                fileIn.copyTo(zipOut)
+            }
+
+            // Add each image file to the zip
+            for (imageFile in imageFiles) {
+                FileInputStream(imageFile).use { fileIn ->
+                    val zipEntry = ZipEntry(imageFile.name)
+                    zipOut.putNextEntry(zipEntry)
+                    fileIn.copyTo(zipOut)
+                }
             }
         }
     }

@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -191,8 +192,19 @@ fun ChatScreen(
                                 )
                             }
                         )
+                        // "Export Chat (ZIP)" menu item
+                        DropdownMenuItem(
+                            text = { Text("Export Chat (ZIP)") },
+                            onClick = {
+                                expanded = false
+                                chatViewModel.onExportChatAsZipClicked() // New ViewModel function
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.CreateNewFolder, contentDescription = "Export ZIP")
+                            }
+                        )
 
-                        // "Delete Chat" placeholder menu item
+                        // "Delete Chat" menu item
                         DropdownMenuItem(
                             text = { Text("Delete Chatroom") },
                             onClick = {
