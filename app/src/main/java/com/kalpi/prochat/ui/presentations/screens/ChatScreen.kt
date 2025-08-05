@@ -1,5 +1,6 @@
 package com.kalpi.prochat.ui.presentations.screens
 
+import android.content.Intent
 import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -52,6 +53,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +66,7 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import com.kalpi.prochat.ui.chat.TextMessage
 import com.kalpi.prochat.ui.chat.ImageMessage
 
@@ -100,6 +103,18 @@ fun ChatScreen(
         }
     }
 
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        chatViewModel.exportFileUri.collect { uri ->
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                putExtra(Intent.EXTRA_STREAM, uri)
+                type = "text/plain"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share chat export"))
+        }
+    }
+
     // NEW: LaunchedEffect to mark messages as read when the screen is shown
     LaunchedEffect(key1 = chatViewModel.currentRoomId) {
         Log.d("ChatScreen", "Entering ChatScreen for room ${chatViewModel.currentRoomId}. Marking messages as read.")
@@ -131,7 +146,16 @@ fun ChatScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                ),
+                actions = {
+                    IconButton(onClick = { chatViewModel.onExportChatClicked() }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Download,
+                            contentDescription = "Export Chat",
+                            tint = Color.White
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
