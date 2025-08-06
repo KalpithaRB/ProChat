@@ -15,6 +15,7 @@ import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
 import com.kalpi.prochat.data.repository.ChatRepository
 import com.kalpi.prochat.ui.chat.ChatUiState
+import com.kalpi.prochat.utils.NetworkStatusObserver
 import com.kalpi.prochat.utils.formatDateSeparator
 import com.kalpi.prochat.utils.isSameDay
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +74,8 @@ class ChatViewModel (
         }
     }
 
+    private val networkStatusObserver = NetworkStatusObserver(application)
+
 
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
     /**
@@ -81,6 +84,17 @@ class ChatViewModel (
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
         .map { messages ->
+            messages.forEach { message ->
+                if (message.senderId != currentUserId && message.status == MessageStatus.SENT) {
+                    viewModelScope.launch {
+                        chatRepository.updateMessageStatus(
+                            currentRoomId,
+                            message.id,
+                            MessageStatus.DELIVERED
+                        )
+                    }
+                }
+            }
             processMessagesAndUpdateState(messages)
         }.stateIn(
             scope = viewModelScope,
@@ -93,9 +107,14 @@ class ChatViewModel (
     val uploadProgress: StateFlow<Map<String, Int>> = _uploadProgress.asStateFlow()
 
     init {
-        //i am keeping this screen empty and removed the dummy data
-        // and the new msgs will be getting appended as they are sent.
-        processMessagesAndUpdateState(emptyList())
+        viewModelScope.launch {
+            networkStatusObserver.observe().collect { isConnected ->
+                if (isConnected) {
+                    Log.d(TAG, "Network reconnected. Retrying failed messages...")
+                    retryFailedMessages()
+                }
+            }
+        }
     }
 
 
@@ -120,7 +139,18 @@ class ChatViewModel (
         }
     }
 
-    // +++++++++++++ NEW FUNCTION FOR IMAGE MESSAGES +++++++++++++
+    fun retryFailedMessages() {
+        viewModelScope.launch {
+            // Use a coroutine scope to perform the retry
+            val failedMessages = chatRepository.getFailedMessages(currentRoomId)
+
+            failedMessages.forEach { failedMessage ->
+                Log.d(TAG, "Retrying failed message with ID: ${failedMessage.id}")
+                chatRepository.sendMessage(currentRoomId, failedMessage.copy(status = MessageStatus.SENDING))
+            }
+        }
+    }
+
     fun prepareAndSendImageMessage(imageUri: Uri) {
         Log.d("ChatViewModel", "prepareAndSendImageMessage called with URI: $imageUri")
 
