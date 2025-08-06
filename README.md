@@ -284,3 +284,120 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+---
+
+# **Week 3 Updates**
+## **Day 4 – Chat Export & Deletion (Personal Data Control)**
+
+### **What Was Implemented**
+
+1. **Export Chat (.txt) Feature**
+
+   * Added an “Export Chat” button that generates a `.txt` file containing the conversation.
+   * The exported file includes timestamps, sender IDs, and message content (text and image placeholders).
+   * Implemented using `SharedFlow<Uri>` in `ChatViewModel` to emit the export file’s URI to the UI.
+   * Files are created in the app’s cache directory via `FileProvider`, allowing sharing through an Intent.
+
+2. **Soft Deletion of Chatrooms**
+
+   * Added an `isDeleted` field to each user’s chatroom document in Firestore.
+   * Soft deletion means the chatroom is hidden from the chat list but not permanently removed, preserving data for future recovery or archival.
+
+3. **Mute/Unmute Chatrooms**
+
+   * Added a `muted` field in Firestore to allow per-user mute preferences.
+   * Muted chats display a bell icon in the chatroom list.
+   * Toast messages provide feedback when toggling mute/unmute.
+
+4. **New Chatroom Actions Menu**
+
+   * Introduced a three-dot dropdown menu for each chatroom list item.
+   * Menu includes “Toggle Mute” and “Delete Chatroom” options, with a confirmation dialog for deletions.
+  
+5. **ZIP Export of Chat and Media Files**
+   
+   * Added support for exporting chats as a **single ZIP file** containing:
+      * A `chat_transcript.txt` file with timestamps, sender IDs, and message content.
+      * All image attachments from the conversation, downloaded and included in the ZIP.
+   * Generated ZIP file is stored in the app’s cache directory and shared using a `FileProvider`.
+   * Implemented using coroutines in the `ChatViewModel` to handle file I/O, image downloading, and zipping operations asynchronously.
+
+---
+
+### **How It Was Implemented (Technical Details)**
+
+* **ViewModel Layer:**
+
+  * `onToggleMute()` updates mute status in Firestore and triggers a toast via `UiEvent`.
+  * `deleteChatroom()` performs soft deletion by setting `isDeleted = true`.
+  * `onExportChatClicked()` generates the `.txt` file using a coroutine and emits the URI via `SharedFlow`.
+  * Added `onExportChatAsZipClicked()` to handle transcript creation, image downloads, and ZIP file assembly.
+  * Used helper functions `downloadImageToFile()` and `zipFiles()` for modularity and clarity.
+  * Emitted the final ZIP file URI via a `SharedFlow<Uri>` to trigger sharing in the UI.
+
+* **Repository Layer:**
+
+  * Added `toggleMuteStatus()` and `softDeleteChatroom()` to modify Firestore documents.
+
+* **UI Layer (Jetpack Compose):**
+
+  * Updated `ChatRoomListScreen` to include a dropdown menu with “Mute/Unmute” and “Delete Chatroom” options.
+  * Added an AlertDialog for deletion confirmation.
+  * Added export chat button in the chat screen.
+
+* **Firebase Schema Updates:**
+
+  * Added `isDeleted` (Boolean) to support soft deletion and filter queries (`whereEqualTo("isDeleted", false)`).
+  * Added `muted` (Boolean) to store per-user mute status.
+
+* **File Handling:**
+
+  * Temporary text and image files are created in the cache directory, zipped, and then cleaned up to save space.
+    
+* **Network Operations:**
+
+  * Image files are downloaded directly from their URLs using `HttpURLConnection`.
+    
+---
+
+### **How to Run and Test**
+
+1. **Export Chat:**
+
+   * Open any chatroom with messages.
+   * Tap “Export Chat.”
+   * Select a sharing method.
+   * Verify `.txt` contains timestamps, sender IDs, and message content.
+
+2. **Soft Delete:**
+
+   * Open the three-dot menu for a chatroom.
+   * Select “Delete Chatroom” and confirm.
+   * Chat disappears from the list.
+   * Verify `isDeleted = true` in Firestore.
+
+3. **Mute/Unmute:**
+
+   * Open the three-dot menu for a chatroom.
+   * Select “Mute Chat.” Verify mute icon appears and `muted = true` in Firestore.
+   * Toggle again to unmute.
+     
+4. **Zip Export:**
+   
+   * Open any chatroom containing messages and images.
+   * Tap **“Export as ZIP”**.
+   * Choose a sharing method (e.g., email, file explorer).
+   * Verify that the downloaded ZIP file contains:
+       * `chat_transcript.txt` with timestamps, sender IDs, and message content.
+       * All images included in the conversation.
+   * Open the ZIP on a desktop or mobile to confirm that both the transcript and images are intact.
+    
+---
+
+### **Stretch Tasks and Future Work**
+
+* Archive/unarchive via swipe gestures (planned).
+* Automated tests for export and chatroom actions (future enhancement).
+
+---
+
