@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
+import com.kalpi.prochat.data.model.ChatRoom
 import kotlinx.coroutines.flow.collectLatest
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.ChatRoomListItem
@@ -67,6 +71,12 @@ fun ChatRoomListScreen(
     var sharedRoomId by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var roomToDelete by remember { mutableStateOf<ChatRoom?>(null) }
+
+
 
     // NEW LaunchedEffect to listen for one-time events from the ViewModel
     LaunchedEffect(key1 = Unit) {
@@ -186,9 +196,22 @@ fun ChatRoomListScreen(
                         ) {
                             items(items = state.chatRooms, key = { it.roomId }) { chatRoom ->
                                 val dismissState = rememberSwipeToDismissBoxState(
-                                    confirmValueChange = {
-                                        // We're not implementing the logic now, so we always return false
-                                        it != SwipeToDismissBoxValue.Settled
+                                    confirmValueChange = {dismissValue ->
+                                        when (dismissValue) {
+                                            // When the user swipes from start to end (left to right)
+                                            SwipeToDismissBoxValue.StartToEnd -> {
+                                                // Call the ViewModel function to soft delete the chatroom
+                                                chatRoomListViewModel.deleteChatroom(chatRoom.roomId)
+                                                true // Allow the dismissal animation to complete
+                                            }
+                                            // When the user swipes from end to start (right to left)
+                                            SwipeToDismissBoxValue.EndToStart -> {
+                                                // For now, we won't implement an archive function, so we block this swipe
+                                                false // Do not allow the dismissal
+                                            }
+                                            // When the item settles back in place
+                                            SwipeToDismissBoxValue.Settled -> false
+                                        }
                                     }
                                 )
                                 SwipeToDismissBox(
@@ -233,19 +256,73 @@ fun ChatRoomListScreen(
                                             }
                                         }
                                     },
-                                    // The 'content' parameter name was correct, but I'll add the corrected block here for clarity
                                     content = {
-                                        ChatRoomListItem(
-                                            chatRoom = chatRoom,
-                                            onRoomClicked = { roomId, roomName ->
-                                                chatRoomListViewModel.onRoomClicked(roomId)
-                                                onRoomClicked(roomId, roomName)
-                                            },
-                                            // NEW: Pass the ViewModel function to the list item
-                                            onToggleMuteClicked = { roomId ->
-                                                chatRoomListViewModel.onToggleMute(roomId)
+                                        // This Row will contain your existing chat room item and the new menu button
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    // This is the click listener for the main chat item
+                                                    onRoomClicked(chatRoom.roomId, chatRoom.name)
+                                                }
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // This is your ChatRoomListItem's content, but we'll put it directly here
+                                            Column(
+                                                modifier = Modifier.weight(1f) // This makes the Column take up all available space
+                                            ) {Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
+                                                if (chatRoom.muted) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.NotificationsOff,
+                                                        contentDescription = "Muted",
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                    )
+                                                }
                                             }
-                                        )
+                                                Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
+                                                chatRoom.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                                            }
+
+                                            // Three-dot menu button
+                                            Box {
+                                                var showMenu by remember { mutableStateOf(false) }
+
+                                                IconButton(onClick = { showMenu = true }) {
+                                                    Icon(Icons.Default.MoreVert, contentDescription = "Room Options")
+                                                }
+
+                                                DropdownMenu(
+                                                    expanded = showMenu,
+                                                    onDismissRequest = { showMenu = false }
+                                                ) {
+                                                    // Toggle Mute Menu Item
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            val text = if (chatRoom.muted) "Unmute Chat" else "Mute Chat"
+                                                            Text(text)
+                                                        },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            chatRoomListViewModel.onToggleMute(chatRoom.roomId)
+                                                        }
+                                                    )
+                                                    // Delete Chatroom Menu Item
+                                                    DropdownMenuItem(
+                                                        text = { Text("Delete Chatroom") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            roomToDelete = chatRoom
+                                                            showDeleteDialog = true
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 )
                                 HorizontalDivider(
@@ -368,6 +445,39 @@ fun ChatRoomListScreen(
                     }
                 ) {
                     Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showDeleteDialog && roomToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                roomToDelete = null
+            },
+            title = { Text("Delete Chatroom") },
+            text = { Text("Are you sure you want to delete '${roomToDelete?.name}'? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Call the new ViewModel function
+                        chatRoomListViewModel.deleteChatroom(roomToDelete!!.roomId)
+                        showDeleteDialog = false
+                        roomToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        roomToDelete = null
+                    }
+                ) {
+                    Text("Cancel")
                 }
             }
         )

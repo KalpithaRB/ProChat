@@ -1,6 +1,7 @@
 package com.kalpi.prochat
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -83,11 +84,14 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     } else {
+                        val context = LocalContext.current
+                        val application = context.applicationContext as Application
                         // Display the chat screen for the selected room
                         val chatRepository = ChatRepository(firestore)
                         val chatRoomRepository = ChatRoomRepository(firestore)
                         val chatViewModel: ChatViewModel = viewModel(
                             factory = ChatViewModelFactory(
+                                application,
                                 chatRepository,
                                 chatRoomRepository,
                                 currentRoomId!!,
@@ -98,6 +102,10 @@ class MainActivity : ComponentActivity() {
                             chatViewModel = chatViewModel,
                             roomName = currentRoomName ?: "Chat Pro",
                             onBackClicked = {
+                                currentRoomId = null
+                                currentRoomName = null
+                            },
+                            onDeleteSuccess = {
                                 currentRoomId = null
                                 currentRoomName = null
                             }
