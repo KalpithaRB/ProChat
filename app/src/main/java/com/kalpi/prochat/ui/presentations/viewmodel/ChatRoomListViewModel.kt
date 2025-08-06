@@ -116,14 +116,27 @@ class ChatRoomListViewModel(
 
     fun onToggleMute(roomId: String) {
         viewModelScope.launch {
-            // We get the current list of rooms from the UI state
-            val currentRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
+            // Find the chatroom from the current UI state
+            val chatRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
+            val chatRoomToUpdate = chatRooms.firstOrNull { it.roomId == roomId } ?: return@launch
+            val newIsMutedState = !chatRoomToUpdate.muted // Assuming the field is named `muted`
 
-            // Find the specific room the user clicked on
-            val chatRoomToMute = currentRooms.find { it.roomId == roomId } ?: return@launch
+            // CORRECTED: Pass all three arguments to the repository function
+            chatRoomRepository.toggleMuteStatus(
+                userId = currentUserId, // This is the missing argument
+                roomId = roomId,
+                isMuted = newIsMutedState
+            )
 
-            // Pass the userId to the repository function
-            chatRoomRepository.toggleMuteStatus(uniqueUserId, roomId, !chatRoomToMute.muted)
+            // Determine the toast message based on the new state
+            val message = if (newIsMutedState) {
+                "${chatRoomToUpdate.name} is muted."
+            } else {
+                "${chatRoomToUpdate.name} is unmuted."
+            }
+
+            // Emit a UiEvent to show the toast
+            _uiEvent.emit(UiEvent.ShowToast(message))
         }
     }
 

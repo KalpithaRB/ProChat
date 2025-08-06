@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.HorizontalDivider
@@ -271,7 +272,18 @@ fun ChatRoomListScreen(
                                             // This is your ChatRoomListItem's content, but we'll put it directly here
                                             Column(
                                                 modifier = Modifier.weight(1f) // This makes the Column take up all available space
-                                            ) {
+                                            ) {Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
+                                                if (chatRoom.muted) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.NotificationsOff,
+                                                        contentDescription = "Muted",
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                    )
+                                                }
+                                            }
                                                 Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
                                                 chatRoom.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                                             }
@@ -290,7 +302,10 @@ fun ChatRoomListScreen(
                                                 ) {
                                                     // Toggle Mute Menu Item
                                                     DropdownMenuItem(
-                                                        text = { Text("Toggle Mute") },
+                                                        text = {
+                                                            val text = if (chatRoom.muted) "Unmute Chat" else "Mute Chat"
+                                                            Text(text)
+                                                        },
                                                         onClick = {
                                                             showMenu = false
                                                             chatRoomListViewModel.onToggleMute(chatRoom.roomId)
