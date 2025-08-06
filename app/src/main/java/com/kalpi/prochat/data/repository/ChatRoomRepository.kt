@@ -37,6 +37,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
                 .document(userId)
                 .collection(CHATROOMS_SUB_COLLECTION)
                 .orderBy("lastTimestamp", Query.Direction.DESCENDING)
+                .whereEqualTo("isDeleted", false)
 
             val subscription = roomsCollection.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -128,7 +129,8 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
                     "name" to roomName,
                     "lastMessage" to "Room created.",
                     "lastTimestamp" to System.currentTimeMillis(),
-                    "lastReadTimestamp" to System.currentTimeMillis()
+                    "lastReadTimestamp" to System.currentTimeMillis(),
+                    "isDeleted" to false
                 )
                 db.collection(USER_CHATROOMS_COLLECTION)
                     .document(userId)
@@ -219,6 +221,21 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
 
             Result.success(Unit)
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+
+    suspend fun softDeleteChatroom(roomId: String, userId: String): Result<Unit> =
+        try {
+            db.collection(USER_CHATROOMS_COLLECTION)
+                .document(userId)
+                .collection(CHATROOMS_SUB_COLLECTION)
+                .document(roomId)
+                .update("isDeleted", true)
+                .await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("ChatRoomRepository", "Error soft-deleting chatroom", e)
             Result.failure(e)
         }
 }
