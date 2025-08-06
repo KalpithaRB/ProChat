@@ -1,8 +1,11 @@
 package com.kalpi.prochat.ui.presentations.viewmodel
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.ChatItem
@@ -14,7 +17,10 @@ import com.kalpi.prochat.data.repository.ChatRepository
 import com.kalpi.prochat.ui.chat.ChatUiState
 import com.kalpi.prochat.utils.formatDateSeparator
 import com.kalpi.prochat.utils.isSameDay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,7 +28,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Locale
 import java.util.UUID
+import java.net.URL
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import java.net.HttpURLConnection
 
 /**
  * ViewModel for the ChatScreen.
@@ -35,12 +50,13 @@ import java.util.UUID
  */
 
 class ChatViewModel (
+    application: Application,
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
     val currentRoomId: String,
     val currentUserId: String
 
-): ViewModel() {
+): AndroidViewModel(application) {
     companion object {
 //        const val CURRENT_USER_ID = "currentUser"
 
@@ -195,6 +211,175 @@ class ChatViewModel (
              val result = chatRoomRepository.markRoomAsRead(currentUserId, currentRoomId)
             if (result.isFailure) {
                 Log.e(TAG, "Failed to mark room as read: ${result.exceptionOrNull()?.message}")
+            }
+        }
+    }
+
+    // NEW: Add a SharedFlow to emit the URI for the file to the UI
+    private val _exportFileUri = MutableSharedFlow<Uri>()
+    val exportFileUri: SharedFlow<Uri> = _exportFileUri
+
+    fun onExportChatClicked() {
+        val currentMessages = (uiState.value as? ChatUiState.Content)?.messages
+        if (currentMessages.isNullOrEmpty()) {
+            // You can emit an error or a toast message here
+            return
+        }
+
+        // Launch a coroutine to handle file I/O
+        viewModelScope.launch(Dispatchers.IO) {
+            val fileName = "chat_export_${currentRoomId}.txt"
+            val fileContent = createChatTextContent(currentMessages)
+
+            // CORRECTED: Use getApplication<Application>() to get the context
+            val file = File(getApplication<Application>().cacheDir, fileName)
+
+            try {
+                // CORRECTED: The use block now works correctly
+                FileOutputStream(file).use {
+                    it.write(fileContent.toByteArray())
+                }
+
+                // CORRECTED: Use getApplication<Application>() to get the context
+                val uri = FileProvider.getUriForFile(
+                    getApplication(),
+                    "${getApplication<Application>().packageName}.fileprovider",
+                    file
+                )
+
+                // Emit the URI to be handled by the UI
+                _exportFileUri.emit(uri)
+
+            } catch (e: Exception) {
+                // Handle file creation or I/O error
+                Log.e("ChatViewModel", "Error exporting chat", e)
+            }
+        }
+    }
+
+    private fun createChatTextContent(messages: List<ChatItem>): String {
+        val stringBuilder = StringBuilder()
+        val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+        messages.forEach { chatItem ->
+            if (chatItem is ChatItem.Message) {
+                val message = chatItem.message
+                val timestamp = timeFormat.format(message.clientTimestamp)
+                val senderId = message.senderId // You might want to get the sender's name
+                val content = when(message.messageType) {
+                    MessageType.TEXT -> message.text ?: ""
+                    MessageType.IMAGE -> "[Image] ${message.imageUrl ?: ""}"
+                    else -> message.text ?: ""
+                }
+                stringBuilder.append("[$timestamp] $senderId: $content\n")
+            }
+        }
+        return stringBuilder.toString()
+    }
+
+    private val _deletionSuccess = MutableSharedFlow<Unit>()
+    val deletionSuccess: SharedFlow<Unit> = _deletionSuccess
+
+    fun deleteChatroom() {
+        viewModelScope.launch {
+            val result = chatRoomRepository.deleteChatroomForUser(currentRoomId, currentUserId)
+            if (result.isSuccess) {
+                _deletionSuccess.emit(Unit) // Signal the UI to navigate back
+            } else {
+                Log.e(TAG, "Failed to delete chatroom: ${result.exceptionOrNull()?.message}")
+                // TODO: You might want to show a toast or a snackbar with the error
+            }
+        }
+    }
+
+    // A function to handle ZIP export
+    fun onExportChatAsZipClicked() {
+        val currentMessages = (uiState.value as? ChatUiState.Content)?.messages
+        if (currentMessages.isNullOrEmpty()) {
+            // You can emit an error or a toast message here
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val appCacheDir = getApplication<Application>().cacheDir
+                val zipFileName = "chat_export_${currentRoomId}.zip"
+                val zipFile = File(appCacheDir, zipFileName)
+
+                // Prepare a text file with chat content
+                val textFileName = "chat_transcript.txt"
+                val textFile = File(appCacheDir, textFileName)
+                val fileContent = createChatTextContent(currentMessages)
+                FileOutputStream(textFile).use { it.write(fileContent.toByteArray()) }
+
+                // Download all image files
+                val imageFiles = mutableListOf<File>()
+                for (chatItem in currentMessages) {
+                    if (chatItem is ChatItem.Message && chatItem.message.messageType == MessageType.IMAGE) {
+                        val imageUrl = chatItem.message.imageUrl
+                        if (!imageUrl.isNullOrBlank()) {
+                            val imageFileName = imageUrl.substringAfterLast("/")
+                            val imageFile = File(appCacheDir, imageFileName)
+                            downloadImageToFile(imageUrl, imageFile)
+                            imageFiles.add(imageFile)
+                        }
+                    }
+                }
+
+                // Zip everything together
+                zipFiles(zipFile, textFile, imageFiles)
+
+                //Clean up temporary files
+                textFile.delete()
+                imageFiles.forEach { it.delete() }
+
+                // Emit the ZIP file URI for sharing
+                val uri = FileProvider.getUriForFile(
+                    getApplication(),
+                    "${getApplication<Application>().packageName}.fileprovider",
+                    zipFile
+                )
+                _exportFileUri.emit(uri)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error exporting chat as ZIP", e)
+            }
+        }
+    }
+
+    // Helper function to download an image from a URL
+    private fun downloadImageToFile(url: String, file: File) {
+        try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connect()
+            connection.inputStream.use { inputStream ->
+                FileOutputStream(file).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download image from $url", e)
+            // You might want to handle this gracefully, e.g., save a placeholder file
+        }
+    }
+
+    // Helper function to create the ZIP file
+    private fun zipFiles(zipFile: File, textFile: File, imageFiles: List<File>) {
+        ZipOutputStream(FileOutputStream(zipFile)).use { zipOut ->
+            // Add the text file to the zip
+            FileInputStream(textFile).use { fileIn ->
+                val zipEntry = ZipEntry(textFile.name)
+                zipOut.putNextEntry(zipEntry)
+                fileIn.copyTo(zipOut)
+            }
+
+            // Add each image file to the zip
+            for (imageFile in imageFiles) {
+                FileInputStream(imageFile).use { fileIn ->
+                    val zipEntry = ZipEntry(imageFile.name)
+                    zipOut.putNextEntry(zipEntry)
+                    fileIn.copyTo(zipOut)
+                }
             }
         }
     }

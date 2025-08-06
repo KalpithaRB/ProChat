@@ -52,13 +52,12 @@ import com.kalpi.prochat.utils.formatTime
  */
 @Composable
 fun TextMessage(
-    message: ChatMessage,
-    isCurrentUser: Boolean,
-    textColor: androidx.compose.ui.graphics.Color
+    text: String,
+    color: androidx.compose.ui.graphics.Color
 ) {
     Text(
-        text = message.text ?: "",
-        color = textColor,
+        text = text,
+        color = color,
         style = MaterialTheme.typography.bodyLarge
     )
 }
