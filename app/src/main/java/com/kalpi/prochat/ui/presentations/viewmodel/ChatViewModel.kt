@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -83,18 +84,11 @@ class ChatViewModel (
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
+        .onEach { messages ->
+            // Use onEach to process the list before it's passed to the UI
+            processDeliveredStatus(messages)
+        }
         .map { messages ->
-            messages.forEach { message ->
-                if (message.senderId != currentUserId && message.status == MessageStatus.SENT) {
-                    viewModelScope.launch {
-                        chatRepository.updateMessageStatus(
-                            currentRoomId,
-                            message.id,
-                            MessageStatus.DELIVERED
-                        )
-                    }
-                }
-            }
             processMessagesAndUpdateState(messages)
         }.stateIn(
             scope = viewModelScope,
@@ -236,11 +230,14 @@ class ChatViewModel (
         return ChatUiState.Content(chatItems)
     }
 
-    fun markRoomAsRead() {
+    fun markMessagesAsRead(messageIds: List<String>) {
         viewModelScope.launch {
-             val result = chatRoomRepository.markRoomAsRead(currentUserId, currentRoomId)
-            if (result.isFailure) {
-                Log.e(TAG, "Failed to mark room as read: ${result.exceptionOrNull()?.message}")
+            messageIds.forEach { messageId ->
+                chatRepository.updateMessageStatus(
+                    currentRoomId,
+                    messageId,
+                    MessageStatus.READ
+                )
             }
         }
     }
@@ -409,6 +406,43 @@ class ChatViewModel (
                     val zipEntry = ZipEntry(imageFile.name)
                     zipOut.putNextEntry(zipEntry)
                     fileIn.copyTo(zipOut)
+                }
+            }
+        }
+    }
+
+    fun markLastMessageAsRead() {
+        viewModelScope.launch {
+            // Find the last message in the current list
+            val messages = (uiState.value as? ChatUiState.Content)
+                ?.messages
+                ?.filterIsInstance<ChatItem.Message>()
+                ?.map { it.message }
+                ?.sortedByDescending { it.clientTimestamp }
+
+            val lastMessage = messages?.firstOrNull()
+
+            if (lastMessage != null && lastMessage.senderId != currentUserId && lastMessage.status != MessageStatus.READ) {
+                // Mark the last message as READ if it's from another user and not already read
+                chatRepository.updateMessageStatus(
+                    currentRoomId,
+                    lastMessage.id,
+                    MessageStatus.READ
+                )
+            }
+        }
+    }
+
+    private fun processDeliveredStatus(messages: List<ChatMessage>) {
+        messages.forEach { message ->
+            // Check if the message is from another user and its status is SENT
+            if (message.senderId != currentUserId && message.status == MessageStatus.SENT) {
+                viewModelScope.launch {
+                    chatRepository.updateMessageStatus(
+                        currentRoomId,
+                        message.id,
+                        MessageStatus.DELIVERED
+                    )
                 }
             }
         }

@@ -173,7 +173,8 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
                 "name" to roomName,
                 "lastMessage" to "Joined room.",
                 "lastTimestamp" to System.currentTimeMillis(),
-                "lastReadTimestamp" to System.currentTimeMillis()
+                "lastReadTimestamp" to System.currentTimeMillis(),
+                "isDeleted" to false
             )
 
             db.collection(USER_CHATROOMS_COLLECTION)

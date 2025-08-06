@@ -258,4 +258,30 @@ class ChatRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+
+    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.DELIVERED)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
+        }
+    }
+
+    suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.READ)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
+        }
+    }
 }

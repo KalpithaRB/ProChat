@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Schedule
@@ -170,39 +171,44 @@ fun MessageStatusIcon(
             )
         }
         MessageStatus.SENT -> {
+            // Single checkmark for "Sent"
             Icon(
-                imageVector = Icons.Outlined.CheckCircle,
+                imageVector = Icons.Default.Check,
                 contentDescription = "Message sent",
                 modifier = Modifier.size(iconSize),
                 tint = iconTint
             )
         }
         MessageStatus.DELIVERED -> {
+            // Double checkmarks for "Delivered"
             Icon(
-                imageVector = Icons.Outlined.DoneAll,
+                imageVector = Icons.Default.DoneAll,
                 contentDescription = "Message delivered",
                 modifier = Modifier.size(iconSize),
                 tint = iconTint
             )
         }
         MessageStatus.READ -> {
+            // Double checkmarks with a distinct color for "Read"
             Icon(
-                imageVector = Icons.Outlined.DoneAll,
+                imageVector = Icons.Default.DoneAll,
                 contentDescription = "Message read",
                 modifier = Modifier.size(iconSize),
-                // Use a different color for the "read" status
-                tint = Color(0xFF34B7F1)
+                tint = Color(0xFF34B7F1) // A blue color to indicate "read"
             )
         }
         MessageStatus.FAILED -> {
-            Icon(
-                imageVector = Icons.Filled.Error,
-                contentDescription = "Message failed, tap to retry",
-                modifier = Modifier
-                    .size(iconSize)
-                    .clickable(onClick = onRetry),
-                tint = MaterialTheme.colorScheme.error
-            )
+            IconButton(
+                onClick = onRetry,
+                modifier = Modifier.size(iconSize)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = "Message failed, tap to retry",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(iconSize)
+                )
+            }
         }
     }
 }

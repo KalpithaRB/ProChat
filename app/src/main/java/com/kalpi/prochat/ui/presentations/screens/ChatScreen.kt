@@ -130,10 +130,29 @@ fun ChatScreen(
         }
     }
 
-    // NEW: LaunchedEffect to mark messages as read when the screen is shown
-    LaunchedEffect(key1 = chatViewModel.currentRoomId) {
-        Log.d("ChatScreen", "Entering ChatScreen for room ${chatViewModel.currentRoomId}. Marking messages as read.")
-        chatViewModel.markRoomAsRead()
+    // LaunchedEffect to mark messages as read when the screen is shown
+    LaunchedEffect(listState) {
+        // Collect snapshots of the last visible item index
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastVisibleIndex ->
+                val currentMessages = (uiState as? ChatUiState.Content)?.messages ?: emptyList()
+                if (lastVisibleIndex != null && currentMessages.isNotEmpty()) {
+                    // Get all messages that are visible on the screen
+                    val visibleMessages = listState.layoutInfo.visibleItemsInfo.mapNotNull {
+                        (currentMessages[it.index] as? ChatItem.Message)?.message
+                    }
+
+                    // Mark any visible messages that are not from the current user and are not already read
+                    val messagesToMarkAsRead = visibleMessages.filter {
+                        it.senderId != chatViewModel.currentUserId && it.status != MessageStatus.READ
+                    }
+
+                    if (messagesToMarkAsRead.isNotEmpty()) {
+                        // Call a new ViewModel function to mark these messages as read
+                        chatViewModel.markMessagesAsRead(messagesToMarkAsRead.map { it.id })
+                    }
+                }
+            }
     }
 
      LaunchedEffect(uiState) {
