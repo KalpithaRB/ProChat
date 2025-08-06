@@ -215,18 +215,21 @@ Shown in chat using Coil with CircularProgressIndicator during upload
 🔁 Replaced Firebase Storage with Cloudinary due to Spark Plan limitations
 
 ---
+## Day 6 – Push Notification + Read Status
 
-Day 6 – Push Notification + Read Status
-Feature Matrix
-Feature	Status	Notes
-FCM Setup (Client)	✅	Firebase Cloud Messaging integrated in Android app. Device successfully retrieves FCM token and handles notifications via FirebaseMessagingService.
-Test Notifications from Firebase Console	✅	Notifications can be received and displayed on the device from Firebase Console.
-Server-Triggered Notifications	⚠️	Pending Phase 2. Server needs to store tokens and send targeted notifications using Firebase Admin SDK.
-Data Payload Support (roomId, messagePreview, senderId)	⚠️	To be implemented in Phase 2 when server logic is updated.
-Deep Link to Chatroom on Notification Tap	⚠️	Pending implementation.
-Read/Unread State Update on Screen Entry	⚠️	Will be integrated alongside deep linking and server payload handling.
-Presence (/presence/{userId})	❌	Stretch task, not yet implemented.
-Typing Indicator (/typing/{roomId}/{userId})	❌
+---
+
+| **Feature**                                                 | **Status** | **Notes**                                                                                                                                             |
+| ----------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **FCM Setup (Client)**                                      | ✅          | Firebase Cloud Messaging integrated in Android app. Device successfully retrieves FCM token and handles notifications via `FirebaseMessagingService`. |
+| **Test Notifications from Firebase Console**                | ✅          | Notifications can be received and displayed on the device from Firebase Console.                                                                      |
+| **Server-Triggered Notifications**                          | ⚠️         | Pending Phase 2. Server needs to store tokens and send targeted notifications using Firebase Admin SDK.                                               |
+| **Data Payload Support (roomId, messagePreview, senderId)** | ⚠️         | To be implemented in Phase 2 when server logic is updated.                                                                                            |
+| **Deep Link to Chatroom on Notification Tap**               | ⚠️         | Pending implementation.                                                                                                                               |
+| **Read/Unread State Update on Screen Entry**                | ⚠️         | Will be integrated alongside deep linking and server payload handling.                                                                                |
+| **Presence (`/presence/{userId}`)**                         | ❌          | Stretch task, not yet implemented.                                                                                                                    |
+| **Typing Indicator (`/typing/{roomId}/{userId}`)**          | ❌          | Not yet implemented.                                                                                                                                  |
+
 
 ---
 How it Works 
@@ -283,4 +286,104 @@ Create a FirebaseMessagingService to handle token generation and incoming notifi
 Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
+
+---
+
+# Week-3 Updates
+
+---
+
+## **Day 1 – Resend Failed Messages & Delivery Receipts**
+
+---
+
+### **What Was Implemented**
+
+1. **Automatic Retry for Failed Messages**
+
+   * Added a `NetworkStatusObserver` to monitor internet connectivity.
+   * In `ChatViewModel`, when the device reconnects, `retryFailedMessages()` is triggered automatically.
+   * Queries Firestore for messages with `MessageStatus.FAILED` and attempts to resend them seamlessly.
+
+2. **Message Delivery Status (Sent, Delivered, Read)**
+
+   * **Sent:** Message is uploaded to Firestore by the sender.
+   * **Delivered:** Recipient’s device receives the message; recipient updates Firestore status to `DELIVERED`.
+   * **Read:** When the recipient opens the chat and a message becomes visible, a `LaunchedEffect` + `snapshotFlow` marks it as `READ` in Firestore.
+
+3. **Message Status Indicators in UI**
+
+   * Implemented `MessageStatusIcon` composable for visual feedback:
+
+     * **Clock (Gray):** Sending
+     * **Single Check (Gray):** Sent
+     * **Double Check (Gray):** Delivered
+     * **Double Check (Blue):** Read
+     * **Error (Red):** Failed
+
+---
+
+### **How It Was Implemented (Technical Details)**
+
+* **ViewModel:**
+
+  * Listens to network state changes.
+  * Updates Firestore status based on visibility events in the chat screen.
+    
+* **UI Layer:**
+
+  * Uses `LaunchedEffect` and `snapshotFlow` to detect visible messages for read status.
+    
+* **Firebase Schema:**
+
+  * No schema changes required. Existing `status` field extended to be updated by both sender and recipient.
+
+---
+
+### **Stretch Task Analysis**
+
+* **Not Implemented:** Per-user read receipts (`readBy`).
+
+  * Would require schema changes to store a list/map of user IDs and timestamps.
+  * Current single-status model (SENT → DELIVERED → READ) is sufficient for one-on-one chats.
+
+---
+
+### **How to Run and Test**
+
+To ensure the new features are working correctly, perform the following manual tests:
+
+ * Test Case: DELIVERED Status
+
+    * Open the app on two separate devices (Device A and Device B).
+
+    * On Device A, send a message to a chat room. The message status should show a single gray checkmark ( SENT ).
+
+    * On Device B, open the app but do not enter the chat room.
+
+    * Switch back to Device A. The message status should change to a double gray checkmark ( DELIVERED ).
+
+ * Test Case: READ Status
+
+    * Continue from the previous test case.
+
+    * On Device B, open the chat room containing the new message.
+
+    * Switch back to Device A. The message status should change to a blue double checkmark ( READ ).
+
+ * Test Case: Failed Message Retry
+
+    * On Device A, turn off the device's internet connection.
+
+    * Send a message. The message should fail and display a red error icon ( FAILED ).
+
+    * Turn on Device A's internet connection. The message should be automatically resent, and its status should update to a gray double checkmark ( DELIVERED ) once it is received by Device B.
+
+---
+
+### **Test Coverage Explanation**
+
+* Manual testing performed across two devices to confirm message states and retry behavior.
+* Future improvement: Unit tests for `ChatViewModel` and integration tests for Firestore interactions.
+
 
