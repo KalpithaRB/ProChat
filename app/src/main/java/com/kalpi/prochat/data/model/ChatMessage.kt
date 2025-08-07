@@ -17,10 +17,13 @@ import java.util.Date // Keep this if you still want a client-side estimate
  * @property roomId ID of the chatroom this message belongs to.
  */
 data class ChatMessage(
-    val id: String = "", // Client-generated UUID, will be used as document ID
+    val id: String = "",
     val senderId: String = "",
     val text: String? = null,
     val imageUrl: String? = null, //for image messages
+    val fileUrl: String? = null,      // URL for any non-image attachment
+    val fileName: String? = null,     // To display the file's original name
+    val fileType: String? = null,
     @ServerTimestamp val serverTimestamp: Date? = null, // Firebase server timestamp
     val clientTimestamp: Long = System.currentTimeMillis(), // Client-side estimate, for immediate display & sorting before server ack
     val messageType: MessageType = MessageType.TEXT,
@@ -32,11 +35,14 @@ data class ChatMessage(
     constructor() : this(
     id = "",
     senderId = "",
-    text = null, // <<< MODIFIED
-    imageUrl = null, // <<< NEW
+    text = null,
+    imageUrl = null,
+    fileUrl = null,
+    fileName = null,
+    fileType = null,
     serverTimestamp = null,
     clientTimestamp = 0L,
-    messageType = MessageType.TEXT, // <<< MODIFIED
+    messageType = MessageType.TEXT,
     status = MessageStatus.SENDING,
     roomId = ""
 
@@ -49,15 +55,17 @@ enum class MessageStatus {
     FAILED,
     DELIVERED,
     READ
-    // SEEN // For Day 6
+
 }
 
 /**
  * Defines the type of a chat message.
  */
 enum class MessageType {
-    TEXT,  // <<< MODIFIED: Was USER, now explicitly TEXT
-    IMAGE, // <<< NEW: For image messages
+    TEXT,  // <<<  Was USER, now explicitly TEXT
+    IMAGE, // <<<  For image messages
+    FILE,    // <<< To represent any general file type
+    AUDIO,  //<<< To represent an audio file
     /** A system-generated message (e.g., "User X has joined the chat"). */
     SYSTEM, USER
 }
