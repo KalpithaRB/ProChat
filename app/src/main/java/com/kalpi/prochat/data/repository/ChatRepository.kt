@@ -100,8 +100,8 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun uploadImageToCloudinaryAndGetUrl(
-        imageUri: Uri,
+    suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
         uploadPreset: String, // e.g., "prochat_unsigned_images"
         messageIdForLog: String, // For better logging
         onProgress: (progress: Int) -> Unit
@@ -120,9 +120,9 @@ class ChatRepository(private val db: FirebaseFirestore) {
         // +++ END DIAGNOSTIC LOG +++
 
         return suspendCancellableCoroutine { continuation ->
-            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $imageUri")
+            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $fileUri")
 
-            val request = MediaManager.get().upload(imageUri)
+            val request = MediaManager.get().upload(fileUri)
                 .unsigned(uploadPreset) // Use your unsigned upload preset
                 .option(
                     "public_id",

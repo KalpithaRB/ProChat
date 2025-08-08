@@ -461,6 +461,11 @@ fun MessageBubble(
                             onRetryClick = onRetryClick
                         )
                     }
+                    MessageType.FILE -> {
+                        // TODO: Implement UI for FILE messages
+                        // For now, you can add a placeholder or log it
+                        Text("File message: ") // Placeholder
+                    }
                     MessageType.SYSTEM -> {
                         Text(
                             text = message.text ?: "",

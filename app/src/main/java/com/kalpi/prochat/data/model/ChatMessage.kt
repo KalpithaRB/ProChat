@@ -65,7 +65,7 @@ enum class MessageType {
     TEXT,  // <<<  Was USER, now explicitly TEXT
     IMAGE, // <<<  For image messages
     FILE,    // <<< To represent any general file type
-    AUDIO,  //<<< To represent an audio file
+//    AUDIO,  //<<< To represent an audio file
     /** A system-generated message (e.g., "User X has joined the chat"). */
     SYSTEM, USER
 }
