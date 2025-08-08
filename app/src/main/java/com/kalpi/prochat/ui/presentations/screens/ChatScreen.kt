@@ -1,7 +1,9 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,6 +72,7 @@ import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import com.kalpi.prochat.ui.chat.AudioMessage
 import com.kalpi.prochat.ui.chat.FileMessage
 import com.kalpi.prochat.ui.chat.TextMessage
 import com.kalpi.prochat.ui.chat.ImageMessage
@@ -83,6 +86,7 @@ import com.kalpi.prochat.ui.chat.ImageMessage
  * @param chatViewModel The ViewModel providing chat data and state.
  */
 
+@RequiresApi(Build.VERSION_CODES.S)
 @OptIn(ExperimentalMaterial3Api::class) // For Scaffold, TopAppBar, TextField
 @Composable
 fun ChatScreen(
@@ -247,6 +251,8 @@ fun ChatScreen(
                 onSendMessage = chatViewModel::sendMessage,
                 onSendImageMessage = chatViewModel::prepareAndSendImageMessage,
                 onSendFileMessage = chatViewModel::prepareAndSendFileMessage,
+                onStartAudioRecording = chatViewModel::startAudioRecording,
+                onStopAudioRecording = chatViewModel::stopAudioRecording
             )
         }
     ) { innerPadding ->
@@ -469,6 +475,10 @@ fun MessageBubble(
                             onRetryClick = onRetryClick
                         )
                     }
+                    MessageType.AUDIO -> {
+                        // NEW: Call the AudioMessage composable here
+                        AudioMessage(message = message)
+                    }
                     MessageType.SYSTEM -> {
                         Text(
                             text = message.text ?: "",
@@ -486,6 +496,8 @@ fun MessageBubble(
                             )
                         }
                     }
+
+                    MessageType.AUDIO -> TODO()
                 }
                 Spacer(modifier = Modifier.height(4.dp))
 

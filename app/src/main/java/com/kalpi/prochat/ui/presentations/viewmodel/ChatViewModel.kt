@@ -38,6 +38,10 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import android.media.MediaRecorder
+import android.os.Build
+import androidx.annotation.RequiresApi
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.UUID
@@ -100,6 +104,9 @@ class ChatViewModel (
             started = SharingStarted.Companion.WhileSubscribed(5000),
             initialValue = ChatUiState.Loading
         )
+
+    private var audioRecorder: MediaRecorder? = null
+    private var audioFile: File? = null
 
     // State to hold upload progress for messages (MessageID -> Progress Percentage)
     private val _uploadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -516,6 +523,97 @@ class ChatViewModel (
                         MessageStatus.DELIVERED
                     )
                 }
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    fun startAudioRecording() {
+        val timestamp = System.currentTimeMillis()
+        val appCacheDir = getApplication<Application>().cacheDir
+
+
+        audioFile = File(appCacheDir, "audio_message_$timestamp.3gp")
+
+        audioRecorder = MediaRecorder(getApplication()).apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+            setOutputFile(audioFile?.absolutePath)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+
+            try {
+                prepare()
+                start()
+                Log.d(TAG, "Audio recording started.")
+            } catch (e: IOException) {
+                Log.e(TAG, "Failed to prepare and start audio recording", e)
+            }
+        }
+    }
+
+    fun stopAudioRecording() {
+        audioRecorder?.apply {
+            try {
+                stop()
+                release()
+                Log.d(TAG, "Audio recording stopped and released.")
+                // Upload the recorded file
+                audioFile?.let { file ->
+                    prepareAndSendAudioMessage(Uri.fromFile(file))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to stop and release audio recorder", e)
+                // Clean up the file if an error occurred
+                audioFile?.delete()
+            }
+        }
+        audioRecorder = null
+        audioFile = null
+    }
+
+    // New function to handle the audio upload and message sending
+    fun prepareAndSendAudioMessage(audioUri: Uri) {
+        Log.d(TAG, "prepareAndSendAudioMessage called with URI: $audioUri")
+
+        viewModelScope.launch {
+            val messageId = UUID.randomUUID().toString()
+            val fileName = "audio_message_${System.currentTimeMillis()}.3gp" // Use a dynamic name
+
+            val tempAudioMessage = ChatMessage(
+                id = messageId,
+                senderId = currentUserId,
+                fileName = fileName,
+                fileType = "audio/3gpp", // Common format for mobile recordings
+                clientTimestamp = System.currentTimeMillis(),
+                messageType = MessageType.AUDIO,
+                status = MessageStatus.SENDING,
+                roomId = currentRoomId
+            )
+            chatRepository.sendMessage(currentRoomId, tempAudioMessage)
+
+
+            val uploadPreset = "prochat_unsigned_audios"
+            val uploadResult = chatRepository.uploadFileToCloudinaryAndGetUrl(
+                fileUri = audioUri,
+                uploadPreset = uploadPreset,
+                messageIdForLog = messageId,
+                onProgress = { progressPercentage ->
+                    _uploadProgress.update { currentProgress ->
+                        currentProgress + (tempAudioMessage.id to progressPercentage)
+                    }
+                }
+            )
+
+            uploadResult.onSuccess { audioUrl ->
+                Log.d(TAG, "Audio upload success. URL: $audioUrl")
+                val finalAudioMessage = tempAudioMessage.copy(
+                    fileUrl = audioUrl,
+                    status = MessageStatus.SENT
+                )
+                chatRepository.sendMessage(currentRoomId, finalAudioMessage)
+            }.onFailure { e ->
+                Log.e(TAG, "Audio upload failed: ${e.message}")
+                chatRepository.updateMessageStatus(currentRoomId, messageId, MessageStatus.FAILED)
             }
         }
     }

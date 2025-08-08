@@ -40,8 +40,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Attachment
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
@@ -67,6 +71,8 @@ fun ChatInput(
     onSendMessage: (String) -> Unit,
     onSendImageMessage: (Uri) -> Unit,
     onSendFileMessage: (Uri) -> Unit,
+    onStartAudioRecording: () -> Unit,
+    onStopAudioRecording: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var textState by remember { mutableStateOf(TextFieldValue("")) }
@@ -202,21 +208,51 @@ fun ChatInput(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Send Button
-            IconButton(
-                onClick = {
-                    if (isSendEnabled) {
-                        onSendMessage(textState.text)
-                        textState = TextFieldValue("")
+            if (textState.text.isNotBlank()) {
+                // Show the SEND button if there's text
+                IconButton(
+                    onClick = {
+                        if (isSendEnabled) {
+                            onSendMessage(textState.text)
+                            textState = TextFieldValue("")
+                        }
+                    },
+                    enabled = isSendEnabled
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send message",
+                        tint = if (isSendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
+            } else {
+                // Show the MICROPHONE button if the text field is empty
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by interactionSource.collectIsPressedAsState()
+
+                LaunchedEffect(isPressed) {
+                    if (isPressed) {
+                        onStartAudioRecording()
+                    } else {
+                        onStopAudioRecording()
                     }
-                },
-                enabled = isSendEnabled
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send message",
-                    tint = if (isSendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) // Standard disabled tint
-                )
+                }
+
+                IconButton(
+                    onClick = {},
+                    modifier = Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = { /* No action on short click */ },
+                        onLongClick = {} // Trigger long press gesture
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Mic, // You need to add `import androidx.compose.material.icons.filled.Mic`
+                        contentDescription = "Record Audio",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

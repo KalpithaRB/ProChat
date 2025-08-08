@@ -22,6 +22,7 @@ data class ChatMessage(
     val text: String? = null,
     val imageUrl: String? = null, //for image messages
     val fileUrl: String? = null,      // URL for any non-image attachment
+    val audioUrl: String? = null,
     val fileName: String? = null,     // To display the file's original name
     val fileType: String? = null,
     val fileSize: Long? = null,
@@ -67,7 +68,7 @@ enum class MessageType {
     TEXT,  // <<<  Was USER, now explicitly TEXT
     IMAGE, // <<<  For image messages
     FILE,    // <<< To represent any general file type
-//    AUDIO,  //<<< To represent an audio file
+    AUDIO,  //<<< To represent an audio file
     /** A system-generated message (e.g., "User X has joined the chat"). */
     SYSTEM, USER
 }

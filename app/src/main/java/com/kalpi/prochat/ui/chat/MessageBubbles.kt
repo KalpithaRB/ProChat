@@ -24,24 +24,34 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.ui.graphics.Color
-
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+//import androidx.media3.ui.PlayerView
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kalpi.prochat.R
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
@@ -233,6 +243,51 @@ fun formatFileSize(sizeInBytes: Long): String {
     val units = listOf("B", "KB", "MB", "GB", "TB")
     val digitGroups = (ln(sizeInBytes.toDouble()) / ln(1024.0)).toInt()
     return String.format("%.1f %s", sizeInBytes / 1024.0.pow(digitGroups.toDouble()), units[digitGroups])
+}
+
+@Composable
+fun AudioMessage(message: ChatMessage) {
+    val context = LocalContext.current
+    val exoPlayer = remember {
+        ExoPlayer.Builder(context).build().apply {
+            message.fileUrl?.let { url ->
+                val mediaItem = MediaItem.fromUri(url)
+                setMediaItem(mediaItem)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        exoPlayer.prepare()
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .background(Color.LightGray, shape = RoundedCornerShape(16.dp))
+            .padding(16.dp)
+            .width(200.dp) // Set a reasonable size for the audio message bubble
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = {
+                if (exoPlayer.isPlaying) {
+                    exoPlayer.pause()
+                } else {
+                    exoPlayer.play()
+                }
+            }) {
+                Icon(
+                    painter = painterResource(
+                        id = if (exoPlayer.isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow
+                    ),
+                    contentDescription = "Play/Pause Audio"
+                )
+            }
+            // Optional: You can add a seek bar or a timestamp here
+        }
+    }
 }
 
 
