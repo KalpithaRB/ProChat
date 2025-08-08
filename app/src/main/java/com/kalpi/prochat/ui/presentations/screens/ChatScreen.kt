@@ -245,7 +245,8 @@ fun ChatScreen(
         bottomBar = {
             ChatInput(
                 onSendMessage = chatViewModel::sendMessage,
-                onSendImageMessage = chatViewModel::prepareAndSendImageMessage
+                onSendImageMessage = chatViewModel::prepareAndSendImageMessage,
+                onSendFileMessage = chatViewModel::prepareAndSendFileMessage,
             )
         }
     ) { innerPadding ->

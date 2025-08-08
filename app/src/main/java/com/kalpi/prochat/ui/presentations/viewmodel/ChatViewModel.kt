@@ -245,7 +245,7 @@ class ChatViewModel (
 
             Log.d(TAG, "Calling repository to upload file for message ID: ${tempFileMessage.id}")
 
-            val uploadPreset = "your_cloudinary_unsigned_upload_preset"
+            val uploadPreset = "prochat_unsigned_files"
             val uploadResult = chatRepository.uploadFileToCloudinaryAndGetUrl(
                 fileUri = fileUri,
                 uploadPreset = uploadPreset,

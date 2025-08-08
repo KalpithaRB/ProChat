@@ -41,6 +41,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Attachment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
@@ -65,6 +66,7 @@ private const val MAX_MESSAGE_LENGTH = 300
 fun ChatInput(
     onSendMessage: (String) -> Unit,
     onSendImageMessage: (Uri) -> Unit,
+    onSendFileMessage: (Uri) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var textState by remember { mutableStateOf(TextFieldValue("")) }
@@ -93,6 +95,29 @@ fun ChatInput(
         }
     }
 
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            Log.d("ChatInput", "File URI selected: $selectedUri")
+            val fileSize = getFileSizeFromUri(context, selectedUri)
+            Log.d("ChatInput", "Selected file URI: $selectedUri, Size: $fileSize bytes")
+
+            if (fileSize == -1L) {
+                Log.w("ChatInput", "Could not determine file size for $selectedUri.")
+                Toast.makeText(context, "Could not determine file size.", Toast.LENGTH_SHORT).show()
+            } else if (fileSize > MAX_FILE_SIZE_BYTES) {
+                Log.w("ChatInput", "File $selectedUri is too large: $fileSize bytes. Max allowed: $MAX_FILE_SIZE_BYTES bytes.")
+                Toast.makeText(context, "File is too large (max 5MB). Please select a smaller one.", Toast.LENGTH_LONG).show()
+            } else {
+                Log.d("ChatInput", "File size OK. Calling ViewModel to prepare and send.")
+                onSendFileMessage(selectedUri)
+            }
+        } ?: run {
+            Log.d("ChatInput", "No file selected or file picker cancelled.")
+        }
+    }
+
     val isSendEnabled = textState.text.isNotBlank() && textState.text.length <= MAX_MESSAGE_LENGTH
 
     Surface(
@@ -112,6 +137,16 @@ fun ChatInput(
                 Icon(
                     imageVector = Icons.Filled.Photo,
                     contentDescription = "Pick Image",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            IconButton(onClick = {
+                filePickerLauncher.launch("*/*")
+            }) {
+                Icon(
+                    imageVector = Icons.Filled.Attachment,
+                    contentDescription = "Attach File",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
