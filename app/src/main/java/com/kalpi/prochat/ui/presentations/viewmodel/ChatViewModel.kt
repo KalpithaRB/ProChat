@@ -6,6 +6,8 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
+import android.provider.OpenableColumns
+import android.webkit.MimeTypeMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.ChatItem
@@ -14,6 +16,9 @@ import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
 import com.kalpi.prochat.data.repository.ChatRepository
+import com.kalpi.prochat.utils.getFileNameFromUri
+import com.kalpi.prochat.utils.getFileTypeFromUri
+import com.kalpi.prochat.utils.getFileSizeFromUri
 import com.kalpi.prochat.ui.chat.ChatUiState
 import com.kalpi.prochat.utils.NetworkStatusObserver
 import com.kalpi.prochat.utils.formatDateSeparator
@@ -45,7 +50,7 @@ import java.net.HttpURLConnection
  * ViewModel for the ChatScreen.
  *
  * This ViewModel is responsible for preparing and managing the UI-related data for the ChatScreen.
- * It exposes the chat messages and UI state through [kotlinx.coroutines.flow.StateFlow].
+ * It exposes the chat messages and UI state through [StateFlow].
  *
  * For Day 1, it uses a predefined list of dummy messages.
  * In later stages, it will interact with a data source (e.g., Firebase) to fetch and send messages.
@@ -80,7 +85,7 @@ class ChatViewModel (
 
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
     /**
-     * Publicly exposed [kotlinx.coroutines.flow.StateFlow] of the [ChatUiState].
+     * Publicly exposed [StateFlow] of the [ChatUiState].
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
@@ -170,8 +175,8 @@ class ChatViewModel (
         viewModelScope.launch {
             Log.d(TAG, "Calling repository to upload image for message ID: ${tempImageMessage.id}")
 
-            val uploadResult = chatRepository.uploadImageToCloudinaryAndGetUrl(
-                imageUri = imageUri,
+            val uploadResult = chatRepository.uploadFileToCloudinaryAndGetUrl(
+                fileUri = imageUri,
                 uploadPreset = "prochat_unsigned_images",
                 messageIdForLog = tempImageMessage.id,
                 onProgress = { progressPercentage ->
@@ -195,6 +200,73 @@ class ChatViewModel (
                 }
             } else {
                 Log.e(TAG, "Image upload failed: ${uploadResult.exceptionOrNull()?.message}")
+            }
+        }
+    }
+
+
+    fun prepareAndSendFileMessage(fileUri: Uri) {
+        Log.d(TAG, "prepareAndSendFileMessage called with URI: $fileUri")
+
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+
+            val fileName = getFileNameFromUri(context, fileUri)
+            val fileMimeType = getFileTypeFromUri(context, fileUri)
+            val fileSize = getFileSizeFromUri(context, fileUri)
+
+            if (fileName.isNullOrBlank() || fileMimeType.isNullOrBlank()) {
+                Log.e(TAG, "Could not determine file details for URI: $fileUri")
+                return@launch
+            }
+
+            // CORRECTED: The ChatMessage constructor is now fully explicit to avoid ambiguity.
+            // This is the source of your first error.
+            val messageId = UUID.randomUUID().toString()
+            val tempFileMessage = ChatMessage(
+                id = messageId,
+                senderId = currentUserId,
+                text = null,
+                imageUrl = null,
+                fileUrl = null,
+                fileName = fileName,
+                fileType = fileMimeType,
+                clientTimestamp = System.currentTimeMillis(),
+                messageType = MessageType.FILE,
+                status = MessageStatus.SENDING,
+                roomId = currentRoomId
+            )
+
+            // This is the source of your second error.
+            // By declaring tempFileMessage above, it is now in scope for the rest of the function.
+            _uploadProgress.update { currentProgress ->
+                currentProgress + (tempFileMessage.id to 0)
+            }
+
+            Log.d(TAG, "Calling repository to upload file for message ID: ${tempFileMessage.id}")
+
+            val uploadPreset = "your_cloudinary_unsigned_upload_preset"
+            val uploadResult = chatRepository.uploadFileToCloudinaryAndGetUrl(
+                fileUri = fileUri,
+                uploadPreset = uploadPreset,
+                messageIdForLog = tempFileMessage.id, // tempFileMessage.id is now in scope
+                onProgress = { progressPercentage ->
+                    _uploadProgress.update { currentProgress ->
+                        currentProgress + (tempFileMessage.id to progressPercentage) // tempFileMessage.id is now in scope
+                    }
+                }
+            )
+
+            uploadResult.onSuccess { fileUrl ->
+                Log.d(TAG, "File upload success. URL: $fileUrl")
+                val finalFileMessage = tempFileMessage.copy(
+                    fileUrl = fileUrl,
+                    status = MessageStatus.SENT
+                )
+                chatRepository.sendMessage(currentRoomId, finalFileMessage)
+            }.onFailure { e ->
+                Log.e(TAG, "File upload failed: ${e.message}")
+                chatRepository.updateMessageStatus(currentRoomId, messageId, MessageStatus.FAILED)
             }
         }
     }
