@@ -24,6 +24,7 @@ data class ChatMessage(
     val fileUrl: String? = null,      // URL for any non-image attachment
     val fileName: String? = null,     // To display the file's original name
     val fileType: String? = null,
+    val fileSize: Long? = null,
     @ServerTimestamp val serverTimestamp: Date? = null, // Firebase server timestamp
     val clientTimestamp: Long = System.currentTimeMillis(), // Client-side estimate, for immediate display & sorting before server ack
     val messageType: MessageType = MessageType.TEXT,
@@ -40,6 +41,7 @@ data class ChatMessage(
     fileUrl = null,
     fileName = null,
     fileType = null,
+    fileSize = null,
     serverTimestamp = null,
     clientTimestamp = 0L,
     messageType = MessageType.TEXT,

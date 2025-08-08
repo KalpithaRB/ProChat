@@ -70,6 +70,7 @@ import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import com.kalpi.prochat.ui.chat.FileMessage
 import com.kalpi.prochat.ui.chat.TextMessage
 import com.kalpi.prochat.ui.chat.ImageMessage
 
@@ -462,9 +463,10 @@ fun MessageBubble(
                         )
                     }
                     MessageType.FILE -> {
-                        // TODO: Implement UI for FILE messages
-                        // For now, you can add a placeholder or log it
-                        Text("File message: ") // Placeholder
+                        FileMessage(
+                            message = message,
+                            onRetryClick = onRetryClick
+                        )
                     }
                     MessageType.SYSTEM -> {
                         Text(

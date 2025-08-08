@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Schedule
@@ -37,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -47,6 +49,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.kalpi.prochat.utils.formatTime
+import kotlin.math.ln
+import kotlin.math.pow
 
 /**
  * A composable for displaying a text-only chat message.
@@ -144,6 +148,91 @@ fun ImageMessage(
             }
         }
     }
+}
+
+/**
+ * A composable for displaying a non-image file chat message.
+ */
+@Composable
+fun FileMessage(
+    message: ChatMessage,
+    onRetryClick: (ChatMessage) -> Unit
+) {
+    val fileName = message.fileName ?: "File"
+    val fileSize = message.fileSize ?: -1L
+    val isSending = message.status == MessageStatus.SENDING
+    val isFailed = message.status == MessageStatus.FAILED
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(8.dp)
+    ) {
+        // Display a generic file icon
+        Icon(
+            imageVector = Icons.Filled.Description,
+            contentDescription = "File icon",
+            tint = if (isSending) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(32.dp)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            // File Name
+            Text(
+                text = fileName,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            // File Size (formatted for readability)
+            if (fileSize != -1L) {
+                Text(
+                    text = formatFileSize(fileSize),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Display progress or error status
+        when {
+            isSending -> {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp)) {
+                    // You'll need to pass the uploadProgress state here.
+                    // For now, we'll show a simple loading indicator.
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
+            isFailed -> {
+                IconButton(
+                    onClick = { onRetryClick(message) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Retry upload",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+
+/**
+ * Helper function to format file size from bytes to a readable format (KB, MB).
+ */
+fun formatFileSize(sizeInBytes: Long): String {
+    if (sizeInBytes <= 0) return "0 B"
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    val digitGroups = (ln(sizeInBytes.toDouble()) / ln(1024.0)).toInt()
+    return String.format("%.1f %s", sizeInBytes / 1024.0.pow(digitGroups.toDouble()), units[digitGroups])
 }
 
 
