@@ -284,3 +284,96 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+---
+# Day 3 – Message Attachments (PDF/Image/Audio)
+---
+
+### ✅ What Was Done
+
+We successfully implemented a robust and user-friendly **file and audio messaging** feature, integrating it into the existing chat functionality. The key accomplishments include:
+
+* 📁 **File Picker Integration**
+  Integrated `ActivityResultLauncher` with `ActivityResultContracts.GetContent()` to let users select various file types (images, PDFs, etc.) from their device.
+
+* 🎯 **Dynamic ChatInput UI**
+  We designed a dynamic input bar inspired by modern messaging apps. The `send` button appears only when the user types, while a `microphone` icon is shown when the input is empty.
+
+* 🎤 **Audio Recording**
+  Long-pressing the microphone button starts recording, and releasing it stops it. The recorded audio is saved temporarily on the device.
+
+* 🧩 **Message Data Model Enhancements**
+  Updated the `ChatMessage` class to support multiple message types (`TEXT`, `IMAGE`, `FILE`, `AUDIO`) and store metadata like `fileUrl`, `fileName`, and `fileType`.
+
+* 🧱 **UI Rendering for All Message Types**
+  Implemented dedicated composables for clean rendering:
+
+  * 🖼 `ImageMessage` – Shows image previews
+  * 📄 `FileMessage` – Displays a file icon + file name
+  * 🎧 `AudioMessage` – Mini audio player with play/pause
+
+* ☁️ **Firebase + Cloudinary Integration**
+  Firestore is used for message storage and Cloudinary for media uploads. All files are uploaded, and URLs are saved with message metadata.
+
+---
+
+### 💡 Key Decisions
+
+* 🔄 **Cloudinary over Firebase Storage**
+  Chose Cloudinary for its generous free tier and no need for a Blaze plan. It simplified file uploads and media management.
+
+* 🧠 **Dynamic UI in `ChatInput`**
+  Swapping between `send` and `mic` icons based on text presence made the UI cleaner and intuitive—mirroring popular chat apps like WhatsApp or Telegram.
+
+* 🎵 **ExoPlayer for Audio Playback**
+  Used ExoPlayer inside the `AudioMessage` composable for its flexibility and excellent support for streaming audio via URLs.
+
+---
+
+### 🧪 How to Run / Test the Features
+
+To test the newly added capabilities:
+
+1. 🚀 Launch the app on a device or emulator
+
+2. 💬 Open any chat room
+
+3. ✏️ **Text Messaging**
+
+   * Start typing → `send` icon appears
+   * Tap it to send a regular message
+
+4. 📎 **File Attachments (images / PDFs)**
+
+   * Tap the image/file picker icon
+   * Select a file → It gets uploaded and shown in the chat with proper icon/preview
+
+5. 🎤 **Audio Messages**
+
+   * Long-press mic button to start recording
+   * Release to stop → The message appears with an audio player
+   * Tap play to listen
+
+---
+
+### 🧷 Test Coverage (Manual)
+
+The features were tested manually and improved iteratively. Here's what we validated:
+
+* ✅ **Dynamic UI Behavior**
+  Mic/send toggle based on input is smooth and responsive
+
+* ✅ **Successful File Uploads**
+  Images, PDFs, and audio files were uploaded to Cloudinary; Firestore stored correct metadata
+
+* ✅ **Message Rendering**
+  All message types display correctly inside the chat bubbles
+
+* ✅ **Message Status Handling**
+  Message states (`SENDING`, `SENT`) are correctly updated in Firestore
+
+* ✅ **Audio Streaming**
+  Audio playback via ExoPlayer works as expected and streams from URL without lag
+
+
+
+
