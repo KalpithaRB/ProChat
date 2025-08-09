@@ -5,6 +5,8 @@ import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import com.kalpi.prochat.data.repository.ChatRepository
 import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.utils.NetworkStatusObserver
+import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 
 /**
  * Factory for creating instances of ChatViewModel with dependencies.
@@ -13,6 +15,7 @@ class ChatViewModelFactory(
     private val application: Application,
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
+    private val networkStatusObserver: NetworkStatusObserver,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModelProvider.Factory {
@@ -24,6 +27,7 @@ class ChatViewModelFactory(
                 application,
                 chatRepository,
                 chatRoomRepository,
+                networkStatusObserver,
                 roomId,
                 currentUserId
             ) as T

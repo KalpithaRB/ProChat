@@ -33,13 +33,18 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModelFactory
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
+import com.kalpi.prochat.utils.NetworkStatusObserver
+import com.kalpi.prochat.data.local.AppDatabase // Import the AppDatabase
+import com.kalpi.prochat.data.local.ChatMessageDao // Import the DAO
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.DisposableEffect
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+    @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -85,19 +90,35 @@ class MainActivity : ComponentActivity() {
                         )
                     } else {
                         val context = LocalContext.current
+                        val appDatabase = AppDatabase.getDatabase(application)
+                        val chatMessageDao = appDatabase.chatMessageDao()
+                        val networkStatusObserver = remember {
+                            NetworkStatusObserver(application)
+                        }
                         val application = context.applicationContext as Application
                         // Display the chat screen for the selected room
-                        val chatRepository = ChatRepository(firestore)
-                        val chatRoomRepository = ChatRoomRepository(firestore)
+                        val chatRepository = remember {
+                            ChatRepository(
+                                db = firestore,
+                                chatMessageDao = chatMessageDao
+                            )
+                        }
+
+                        val chatRoomRepository = remember {
+                            ChatRoomRepository(firestore)
+                        }
+
                         val chatViewModel: ChatViewModel = viewModel(
                             factory = ChatViewModelFactory(
-                                application,
-                                chatRepository,
-                                chatRoomRepository,
-                                currentRoomId!!,
-                                uniqueUserId
+                                application = application,
+                                chatRepository = chatRepository,
+                                chatRoomRepository = chatRoomRepository,
+                                networkStatusObserver = networkStatusObserver,
+                                roomId = currentRoomId!!,
+                                currentUserId = uniqueUserId
                             )
                         )
+
                         ChatScreen(
                             chatViewModel = chatViewModel,
                             roomName = currentRoomName ?: "Chat Pro",

@@ -41,6 +41,7 @@ import java.io.FileOutputStream
 import android.media.MediaRecorder
 import android.os.Build
 import androidx.annotation.RequiresApi
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -70,8 +71,6 @@ class ChatViewModel (
 
 ): AndroidViewModel(application) {
     companion object {
-//        const val CURRENT_USER_ID = "currentUser"
-
         private const val TAG = "ChatViewModel"
         fun getOrCreateUserId(context: Context): String {
             val prefs = context.getSharedPreferences("chat_prefs", Context.MODE_PRIVATE)
@@ -94,15 +93,12 @@ class ChatViewModel (
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
-        .onEach { messages ->
-            // Use onEach to process the list before it's passed to the UI
-            processDeliveredStatus(messages)
-        }
         .map { messages ->
             processMessagesAndUpdateState(messages)
-        }.stateIn(
+        }.distinctUntilChanged()
+        .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Companion.WhileSubscribed(5000),
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = ChatUiState.Loading
         )
 
@@ -207,9 +203,11 @@ class ChatViewModel (
                     chatRepository.sendMessage(currentRoomId, finalImageMessage)
                 } else {
                     Log.e(TAG, "Image upload succeeded but URL was null.")
+                    chatRepository.updateMessageStatus(currentRoomId, tempImageMessage.id, MessageStatus.FAILED)
                 }
             } else {
                 Log.e(TAG, "Image upload failed: ${uploadResult.exceptionOrNull()?.message}")
+                chatRepository.updateMessageStatus(currentRoomId, tempImageMessage.id, MessageStatus.FAILED)
             }
         }
     }
@@ -220,7 +218,6 @@ class ChatViewModel (
 
         viewModelScope.launch {
             val context = getApplication<Application>()
-
             val fileName = getFileNameFromUri(context, fileUri)
             val fileMimeType = getFileTypeFromUri(context, fileUri)
             val fileSize = getFileSizeFromUri(context, fileUri)
@@ -230,8 +227,6 @@ class ChatViewModel (
                 return@launch
             }
 
-            // CORRECTED: The ChatMessage constructor is now fully explicit to avoid ambiguity.
-            // This is the source of your first error.
             val messageId = UUID.randomUUID().toString()
             val tempFileMessage = ChatMessage(
                 id = messageId,
@@ -241,6 +236,7 @@ class ChatViewModel (
                 fileUrl = null,
                 fileName = fileName,
                 fileType = fileMimeType,
+                fileSize = fileSize,
                 clientTimestamp = System.currentTimeMillis(),
                 messageType = MessageType.FILE,
                 status = MessageStatus.SENDING,
@@ -254,6 +250,7 @@ class ChatViewModel (
             }
 
             Log.d(TAG, "Calling repository to upload file for message ID: ${tempFileMessage.id}")
+            chatRepository.sendMessage(currentRoomId, tempFileMessage)
 
             val uploadPreset = "prochat_unsigned_files"
             val uploadResult = chatRepository.uploadFileToCloudinaryAndGetUrl(
