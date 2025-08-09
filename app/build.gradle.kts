@@ -124,4 +124,16 @@ dependencies {
 
 
     implementation("androidx.media3:media3-exoplayer:1.8.0")
+
+    // Room Database
+    annotationProcessor("androidx.room:room-compiler:2.7.2")
+
+    // To use Kotlin annotation processing tool (kapt)
+    // kapt("androidx.room:room-compiler:$room_version")
+
+    // To use Kotlin Symbol Processing (KSP)
+    ksp("androidx.room:room-compiler:2.7.2")
+
+    // Kotlin Extensions and Coroutines support for Room
+    implementation("androidx.room:room-ktx:2.7.2")
 }

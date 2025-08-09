@@ -5,15 +5,18 @@ import androidx.room.PrimaryKey
 
 
 @Entity(tableName = "chat_messages")
-data class ChatMessageEntity(
-    @PrimaryKey
-    val id: String,
-    val text: String,
-    val senderId: String,
-    val clientTimestamp: Long,
-    val status: String,
-    val imageUrl: String?,
+data class MessageEntity(
+    @PrimaryKey val id: String,
     val roomId: String,
-    // Add the messageType field to the local entity
-    val messageType: String
+    val senderId: String,
+    val text: String?,
+    val imageUrl: String?, // For image messages
+    val fileUrl: String?, // URL for any non-image attachment
+    val audioUrl: String?, // For audio messages
+    val fileName: String?,
+    val fileType: String?,
+    val fileSize: Long?,
+    val clientTimestamp: Long, // <-- ADDED THIS FIELD
+    val messageType: String,
+    val status: String
 )
