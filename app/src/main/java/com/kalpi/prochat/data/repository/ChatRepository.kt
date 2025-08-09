@@ -12,12 +12,24 @@ import com.kalpi.prochat.data.model.MessageStatus
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import kotlin.coroutines.resume
+import com.kalpi.prochat.data.local.ChatMessageDao
+import com.kalpi.prochat.data.local.MessageEntity
+import com.kalpi.prochat.data.model.MessageType
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
-class ChatRepository(private val db: FirebaseFirestore) {
+class ChatRepository(
+    private val db: FirebaseFirestore,
+    private val chatMessageDao: ChatMessageDao
+) {
 
     companion object {
         const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
@@ -26,8 +38,48 @@ class ChatRepository(private val db: FirebaseFirestore) {
         private const val MESSAGES_COLLECTION = "messages"
     }
 
+    /**function to convert our Firestore ChatMessage to a Room MessageEntity */
+    private fun ChatMessage.toMessageEntity(): MessageEntity {
+        return MessageEntity(
+            id = this.id,
+            roomId = this.roomId,
+            senderId = this.senderId,
+            text = this.text,
+            imageUrl = this.imageUrl,
+            fileUrl = this.fileUrl,
+            audioUrl = this.audioUrl,
+            fileName = this.fileName,
+            fileType = this.fileType,
+            fileSize = this.fileSize,
+            clientTimestamp = this.clientTimestamp,
+            messageType = this.messageType.name,
+            status = this.status.name
+        )
+    }
+
+    /** New function to convert a Room MessageEntity back to a ChatMessage */
+    private fun MessageEntity.toChatMessage(): ChatMessage {
+        return ChatMessage(
+            id = this.id,
+            roomId = this.roomId,
+            senderId = this.senderId,
+            text = this.text,
+            imageUrl = this.imageUrl,
+            fileUrl = this.fileUrl,
+            audioUrl = this.audioUrl,
+            fileName = this.fileName,
+            fileType = this.fileType,
+            fileSize = this.fileSize,
+            clientTimestamp = this.clientTimestamp,
+            messageType = MessageType.valueOf(this.messageType),
+            status = MessageStatus.valueOf(this.status)
+        )
+    }
+
 
     suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+        chatMessageDao.insertMessage(message.toMessageEntity())
+
         val messageDocRef = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
@@ -65,6 +117,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
             // Step 4: If all writes were successful, update the status to SENT
             messageDocRef.update("status", MessageStatus.SENT.name).await()
+            chatMessageDao.updateMessageStatus(message.id, MessageStatus.SENT.name)
             Log.d(TAG, "Message sent and chatroom documents updated for all participants in room: $roomId")
             Result.success(Unit)
 
@@ -75,6 +128,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
             // final write to avoid a nested failure.
             try {
                 messageDocRef.update("status", MessageStatus.FAILED.name).await()
+                chatMessageDao.updateMessageStatus(message.id, MessageStatus.FAILED.name)
             } catch (updateError: Exception) {
                 Log.e(TAG, "Failed to update message status to FAILED", updateError)
             }
@@ -214,37 +268,54 @@ class ChatRepository(private val db: FirebaseFirestore) {
      * Listens for real-time messages from Firestore and emits them as a Flow.
      * This uses the existing ChatMessage data model without modification.
      */
-    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
-        val messagesCollection = db.collection(CHATROOMS_COLLECTION)
-            .document(roomId)
-            .collection(MESSAGES_COLLECTION)
-            .orderBy(
-                "clientTimestamp",
-                Query.Direction.ASCENDING
-            ) // Order by client-side timestamp for consistency
+    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = flow {
+        val localMessagesFlow = chatMessageDao.getMessagesByRoom(roomId)
+            .distinctUntilChanged()
+            .map { entities -> entities.map { it.toChatMessage() } }
 
-        val subscription = messagesCollection.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error) // Close the flow with the error
-                return@addSnapshotListener
-            }
+        // Emit the local messages immediately
+        emitAll(localMessagesFlow)
 
-            if (snapshot != null) {
-                val messages = snapshot.documents.mapNotNull { document ->
-                    // Your ChatMessage class is directly used for deserialization
-                    document.toObject(ChatMessage::class.java)
+        // Then, start syncing with Firestore
+        try {
+            val firestoreMessagesFlow = callbackFlow<List<ChatMessage>> {
+                val messagesCollection = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection(MESSAGES_COLLECTION)
+                    .orderBy("clientTimestamp", Query.Direction.ASCENDING)
+
+                val subscription = messagesCollection.addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Error fetching from Firestore", error)
+                        close(error)
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        val firestoreMessages = snapshot.documents.mapNotNull { document ->
+                            document.toObject(ChatMessage::class.java)
+                        }
+                        trySend(firestoreMessages).isSuccess
+                    }
                 }
-                trySend(messages).isSuccess // Emit the new list of messages
+                awaitClose { subscription.remove() }
             }
-        }
 
-        // The awaitClose block is important to cancel the listener when the Flow is no longer needed
-        awaitClose {
-            subscription.remove()
+            // Collect messages from Firestore and save them to the local database
+            firestoreMessagesFlow.collect { firestoreMessages ->
+                firestoreMessages.forEach { message ->
+                    chatMessageDao.insertMessage(message.toMessageEntity())
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync with Firestore", e)
+            // The local data will continue to be shown.
         }
     }
 
     suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
+        // Update Both local and remote
+        chatMessageDao.updateMessageStatus(messageId, newStatus.name)
         return try {
             db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
@@ -260,6 +331,8 @@ class ChatRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+        // Update local status first
+        chatMessageDao.updateMessageStatus(messageId, MessageStatus.DELIVERED.name)
         try {
             db.collection("chat_rooms")
                 .document(chatRoomId)
@@ -268,11 +341,13 @@ class ChatRepository(private val db: FirebaseFirestore) {
                 .update("status", MessageStatus.DELIVERED)
                 .await()
         } catch (e: Exception) {
-            // Log the error or handle it as needed
+            Log.e(TAG, "Error marking message as delivered in Firestore", e)
         }
     }
 
     suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+        // Update local status first
+        chatMessageDao.updateMessageStatus(messageId, MessageStatus.READ.name)
         try {
             db.collection("chat_rooms")
                 .document(chatRoomId)
@@ -281,7 +356,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
                 .update("status", MessageStatus.READ)
                 .await()
         } catch (e: Exception) {
-            // Log the error or handle it as needed
+            Log.e(TAG, "Error marking message as read in Firestore", e)
         }
     }
 }

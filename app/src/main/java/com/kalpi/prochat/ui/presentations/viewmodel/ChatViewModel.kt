@@ -64,6 +64,7 @@ class ChatViewModel (
     application: Application,
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
+    private val networkStatusObserver: NetworkStatusObserver,
     val currentRoomId: String,
     val currentUserId: String
 
@@ -84,7 +85,7 @@ class ChatViewModel (
         }
     }
 
-    private val networkStatusObserver = NetworkStatusObserver(application)
+    //private val networkStatusObserver = NetworkStatusObserver(application)
 
 
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
@@ -118,6 +119,8 @@ class ChatViewModel (
                 if (isConnected) {
                     Log.d(TAG, "Network reconnected. Retrying failed messages...")
                     retryFailedMessages()
+                } else {
+                    Log.d(TAG, "Network unavailable. Operating in offline mode.")
                 }
             }
         }
