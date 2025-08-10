@@ -284,3 +284,50 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+---
+# Day 2 - Offline Support & Local Cache
+
+---
+
+### What was done
+
+This is a **partial implementation** of a real-time chat application with a focus on **offline-first functionality**. The core features are a robust chat system that functions without an active network connection, a dynamic UI that reflects message status, and a dependency-managed architecture.
+
+The implementation included:
+* **Offline-first Architecture**: Messages are immediately saved to a local Room database. The app attempts to sync with Firestore (the remote backend) when a network connection is available.
+* **Dynamic Message Status**: The UI now displays a dynamic status for each message, including:
+    * **`SENDING`**: A clock icon ⏱️ (indicating the message is waiting for a network connection to upload).
+    * **`SENT`**: A single checkmark ✔️ (indicating the message has been successfully uploaded).
+    * **`FAILED`**: An error icon ⚠️ (indicating the message failed to upload and can be retried).
+* **Network Status UI**: A UI banner appears at the top of the chat screen to clearly inform the user when they are offline.
+* **Dependency Management**: We used a **manual dependency injection (DI)** approach with a custom `ChatViewModelFactory` to manage and provide dependencies like `ChatRepository` and `NetworkStatusObserver` to the `ChatViewModel`.
+* **Media and File Handling**: The system was updated to support sending and retrying images, audio, and other files.
+
+***
+
+### Key decisions
+
+* **UI/State Management**: We implemented a `ChatUiState` sealed class to manage the UI's state, allowing the screen to gracefully handle loading, errors, and content. The UI observes a single `uiState` `StateFlow` to drive all rendering.
+* **Data Flow**: The data flow is `Remote > Repository > Local Database > ViewModel > UI`. All incoming and outgoing messages are first processed by the `ChatRepository` and persisted in a local Room database, ensuring data is always available locally.
+* **Network Status**: The `NetworkStatusObserver` was created to monitor the device's connectivity. The `ChatViewModel` observes this status to automatically retry failed messages when the network becomes available.
+* **File Provider**: The `FileProvider` was configured in the `AndroidManifest.xml` to securely share exported chat files, such as ZIPs and text documents.
+
+***
+
+### How to run/test
+
+1.  **Run the app** on a physical device or emulator.
+2.  **Go Offline**: Navigate to a chat room and turn off Wi-Fi and mobile data (use airplane mode for a guaranteed offline state).
+3.  **Send a Message**: Type and send a message. The message should appear with a `SENDING` status icon (⏱️).
+4.  **Go Online**: Turn the network back on.
+5.  **Verify Status**: The message status should automatically update to `SENT` (✔️).
+
+***
+
+### Test coverage explanation
+
+While we have manually verified the core functionality, the implementation is still partially successful due to a critical bug. This bug is causing message status icons to revert unexpectedly, preventing a consistent and reliable display of message states after multiple messages are sent and the network status changes.
+
+The app is functional in that it saves and sends messages, but the UI feedback for message status is not stable. Further debugging is required to pinpoint and fix this issue, ensuring the UI accurately reflects the true status of each message as it's processed by the network.
+
+

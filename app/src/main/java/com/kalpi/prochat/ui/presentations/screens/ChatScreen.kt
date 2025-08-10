@@ -1,6 +1,10 @@
 package com.kalpi.prochat.ui.presentations.screens
 
+import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
+import androidx.benchmark.traceprocessor.Row
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,7 +55,12 @@ import com.kalpi.prochat.data.ChatItem
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +73,13 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import com.kalpi.prochat.ui.chat.AudioMessage
+import com.kalpi.prochat.ui.chat.FileMessage
+import com.kalpi.prochat.ui.chat.TextMessage
+import com.kalpi.prochat.ui.chat.ImageMessage
+import com.kalpi.prochat.utils.NetworkStatusObserver
 
 
 /**
@@ -74,14 +90,16 @@ import androidx.compose.runtime.rememberCoroutineScope
  * @param chatViewModel The ViewModel providing chat data and state.
  */
 
+@RequiresApi(Build.VERSION_CODES.S)
 @OptIn(ExperimentalMaterial3Api::class) // For Scaffold, TopAppBar, TextField
 @Composable
 fun ChatScreen(
     // We can allow providing a specific recipient name if needed later for the TopAppBar
     // recipientName: String = "Chat User",
     modifier: Modifier = Modifier,
-    chatViewModel: ChatViewModel, // Uses the default ViewModel factory
+    chatViewModel: ChatViewModel,
     onBackClicked: () -> Unit,
+    onDeleteSuccess: () -> Unit,
     roomName: String
 ) {
     val uiState by chatViewModel.uiState.collectAsState()
@@ -97,11 +115,54 @@ fun ChatScreen(
             !listState.canScrollForward
         }
     }
+    val context = LocalContext.current
 
-    // NEW: LaunchedEffect to mark messages as read when the screen is shown
-    LaunchedEffect(key1 = chatViewModel.currentRoomId) {
-        Log.d("ChatScreen", "Entering ChatScreen for room ${chatViewModel.currentRoomId}. Marking messages as read.")
-        chatViewModel.markRoomAsRead()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val networkStatus by chatViewModel.networkStatus.collectAsState(initial = NetworkStatusObserver.Status.Available)
+
+    // Use a LaunchedEffect to listen for the navigation event
+    // that the ViewModel will emit after a successful deletion.
+    LaunchedEffect(Unit) {
+        chatViewModel.deletionSuccess.collect {
+            onDeleteSuccess()
+        }
+    }
+
+
+    LaunchedEffect(Unit) {
+        chatViewModel.exportFileUri.collect { uri ->
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                putExtra(Intent.EXTRA_STREAM, uri)
+                type = "text/plain"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Share chat export"))
+        }
+    }
+
+    // LaunchedEffect to mark messages as read when the screen is shown
+    LaunchedEffect(listState) {
+        // Collect snapshots of the last visible item index
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastVisibleIndex ->
+                val currentMessages = (uiState as? ChatUiState.Content)?.messages ?: emptyList()
+                if (lastVisibleIndex != null && currentMessages.isNotEmpty()) {
+                    // Get all messages that are visible on the screen
+                    val visibleMessages = listState.layoutInfo.visibleItemsInfo.mapNotNull {
+                        (currentMessages[it.index] as? ChatItem.Message)?.message
+                    }
+
+                    // Mark any visible messages that are not from the current user and are not already read
+                    val messagesToMarkAsRead = visibleMessages.filter {
+                        it.senderId != chatViewModel.currentUserId && it.status != MessageStatus.READ
+                    }
+
+                    if (messagesToMarkAsRead.isNotEmpty()) {
+                        // Call a new ViewModel function to mark these messages as read
+                        chatViewModel.markMessagesAsRead(messagesToMarkAsRead.map { it.id })
+                    }
+                }
+            }
     }
 
      LaunchedEffect(uiState) {
@@ -129,13 +190,74 @@ fun ChatScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                ),
+                actions = {
+                    var expanded by remember { mutableStateOf(false) }
+
+                    // Three-dot menu icon
+                    IconButton(onClick = { expanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More options",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Dropdown menu
+                    DropdownMenu(
+                        expanded = expanded, onDismissRequest = { expanded = false }
+                    ) {
+                        // "Export Chat" menu item
+                        DropdownMenuItem(
+                            text = { Text("Export Chat") },
+                            onClick = {
+                                expanded = false
+                                chatViewModel.onExportChatClicked()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Download,
+                                    contentDescription = "Export"
+                                )
+                            }
+                        )
+                        // "Export Chat (ZIP)" menu item
+                        DropdownMenuItem(
+                            text = { Text("Export Chat (ZIP)") },
+                            onClick = {
+                                expanded = false
+                                chatViewModel.onExportChatAsZipClicked() // New ViewModel function
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.CreateNewFolder, contentDescription = "Export ZIP")
+                            }
+                        )
+
+                        // "Delete Chat" menu item
+                        DropdownMenuItem(
+                            text = { Text("Delete Chatroom") },
+                            onClick = {
+                                expanded = false
+                                showDeleteDialog = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Delete,
+                                    contentDescription = "Delete Chatroom"
+                                )
+                            }
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
             ChatInput(
                 onSendMessage = chatViewModel::sendMessage,
-                onSendImageMessage = chatViewModel::prepareAndSendImageMessage
+                onSendImageMessage = chatViewModel::prepareAndSendImageMessage,
+                onSendFileMessage = chatViewModel::prepareAndSendFileMessage,
+                onStartAudioRecording = chatViewModel::startAudioRecording,
+                onStopAudioRecording = chatViewModel::stopAudioRecording
             )
         }
     ) { innerPadding ->
@@ -144,6 +266,34 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            AnimatedVisibility(
+                visible = networkStatus == NetworkStatusObserver.Status.Unavailable,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Gray)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = "Offline",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "Offline",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             when (val state = uiState) {
                 is ChatUiState.Loading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -251,6 +401,28 @@ fun ChatScreen(
                     )
                 }
             }
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text("Delete Chatroom") },
+                    text = { Text("Are you sure you want to delete this chatroom? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showDeleteDialog = false
+                                chatViewModel.deleteChatroom() // Call the ViewModel function
+                            }
+                        ) {
+                            Text("Delete")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -312,25 +484,51 @@ fun MessageBubble(
                 .padding(10.dp)
         ) {
             Column {
-                if (message.messageType == MessageType.SYSTEM) {
-                    Text(
-                        text = message.text ?: "",
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 14.sp
-                    )
-                } else {
-                    message.text?.let { textContent ->
-                        Text(
-                            text = textContent,
-                            color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-                            fontSize = 16.sp
+                when (message.messageType) {
+                    MessageType.TEXT -> {
+                        message.text?.let { textContent ->
+                            TextMessage(
+                                text = textContent,
+                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                    MessageType.IMAGE -> {
+                        ImageMessage(
+                            message = message,
+                            isCurrentUser = isCurrentUser,
+                            uploadProgress = uploadProgress,
+                            onRetryClick = onRetryClick
                         )
                     }
-
-                    // A spacer is good practice to separate content from meta-data
-                    Spacer(modifier = Modifier.height(4.dp))
+                    MessageType.FILE -> {
+                        FileMessage(
+                            message = message,
+                            onRetryClick = onRetryClick
+                        )
+                    }
+                    MessageType.AUDIO -> {
+                        AudioMessage(message = message)
+                    }
+                    MessageType.SYSTEM -> {
+                        Text(
+                            text = message.text ?: "",
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp
+                        )
+                    }
+                    MessageType.USER -> {
+                        message.text?.let { textContent ->
+                            TextMessage(
+                                text = textContent,
+                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Row for time and status icon, aligned to the bottom end of the bubble
                 Row(
