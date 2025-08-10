@@ -12,17 +12,34 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 class NetworkStatusObserver(context: Context) {
 
+    enum class Status {
+        Available,
+        Unavailable
+    }
+
+
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    fun observe(): Flow<Boolean> = callbackFlow {
+    fun observe(): Flow<Status> = callbackFlow {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                trySend(true).isSuccess
+                trySend(Status.Available).isSuccess
             }
 
             override fun onLost(network: Network) {
-                trySend(false).isSuccess
+                trySend(Status.Unavailable).isSuccess
+            }
+
+            // This ensures the initial state is also checked robustly
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                val isConnected = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        && networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (isConnected) {
+                    trySend(Status.Available)
+                } else {
+                    trySend(Status.Unavailable)
+                }
             }
         }
 

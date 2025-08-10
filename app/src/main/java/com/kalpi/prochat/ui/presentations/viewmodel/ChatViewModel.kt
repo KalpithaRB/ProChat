@@ -111,8 +111,8 @@ class ChatViewModel (
 
     init {
         viewModelScope.launch {
-            networkStatusObserver.observe().collect { isConnected ->
-                if (isConnected) {
+            networkStatusObserver.observe().collect { status -> // 'status' will now be NetworkStatusObserver.Status
+                if (status == NetworkStatusObserver.Status.Available) {
                     Log.d(TAG, "Network reconnected. Retrying failed messages...")
                     retryFailedMessages()
                 } else {
@@ -121,6 +121,13 @@ class ChatViewModel (
             }
         }
     }
+
+    val networkStatus: StateFlow<NetworkStatusObserver.Status> = networkStatusObserver.observe()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = NetworkStatusObserver.Status.Available // Default or initial state
+        )
 
 
 

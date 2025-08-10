@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.benchmark.traceprocessor.Row
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -54,6 +55,7 @@ import com.kalpi.prochat.data.ChatItem
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
@@ -72,10 +74,12 @@ import com.kalpi.prochat.ui.chat.MessageStatusIcon
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import com.kalpi.prochat.ui.chat.AudioMessage
 import com.kalpi.prochat.ui.chat.FileMessage
 import com.kalpi.prochat.ui.chat.TextMessage
 import com.kalpi.prochat.ui.chat.ImageMessage
+import com.kalpi.prochat.utils.NetworkStatusObserver
 
 
 /**
@@ -93,7 +97,7 @@ fun ChatScreen(
     // We can allow providing a specific recipient name if needed later for the TopAppBar
     // recipientName: String = "Chat User",
     modifier: Modifier = Modifier,
-    chatViewModel: ChatViewModel, // Uses the default ViewModel factory
+    chatViewModel: ChatViewModel,
     onBackClicked: () -> Unit,
     onDeleteSuccess: () -> Unit,
     roomName: String
@@ -114,6 +118,7 @@ fun ChatScreen(
     val context = LocalContext.current
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val networkStatus by chatViewModel.networkStatus.collectAsState(initial = NetworkStatusObserver.Status.Available)
 
     // Use a LaunchedEffect to listen for the navigation event
     // that the ViewModel will emit after a successful deletion.
@@ -261,6 +266,34 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            AnimatedVisibility(
+                visible = networkStatus == NetworkStatusObserver.Status.Unavailable,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Gray)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudOff,
+                        contentDescription = "Offline",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "Offline",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             when (val state = uiState) {
                 is ChatUiState.Loading -> {
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -451,7 +484,6 @@ fun MessageBubble(
                 .padding(10.dp)
         ) {
             Column {
-                // CORRECTED LOGIC: Use a 'when' statement to render the correct content
                 when (message.messageType) {
                     MessageType.TEXT -> {
                         message.text?.let { textContent ->
@@ -476,7 +508,6 @@ fun MessageBubble(
                         )
                     }
                     MessageType.AUDIO -> {
-                        // NEW: Call the AudioMessage composable here
                         AudioMessage(message = message)
                     }
                     MessageType.SYSTEM -> {
@@ -488,7 +519,6 @@ fun MessageBubble(
                         )
                     }
                     MessageType.USER -> {
-                        // This case can be treated the same as TEXT, or handled with a generic text message if needed
                         message.text?.let { textContent ->
                             TextMessage(
                                 text = textContent,
@@ -496,9 +526,8 @@ fun MessageBubble(
                             )
                         }
                     }
-
-                    MessageType.AUDIO -> TODO()
                 }
+
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // Row for time and status icon, aligned to the bottom end of the bubble
