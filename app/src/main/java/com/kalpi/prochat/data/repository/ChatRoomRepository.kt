@@ -14,7 +14,20 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.callbackFlow
 
-class ChatRoomRepository(private val db: FirebaseFirestore) {
+interface ChatRoomRepository{
+    fun listenToChatRooms(userId: String): Flow<List<ChatRoom>>
+    suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int
+    suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit>
+    suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String>
+    suspend fun joinChatRoom(userId: String, roomId: String): Result<String>
+    suspend fun toggleMuteStatus(userId: String, roomId: String, isMuted: Boolean)
+    suspend fun deleteChatroomForUser(roomId: String, userId: String): Result<Unit>
+    suspend fun softDeleteChatroom(roomId: String, userId: String): Result<Unit>
+
+
+}
+
+class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomRepository{
 
     companion object {
         private const val TAG = "ChatRoomRepository"
@@ -29,7 +42,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
      * This function now separates the concerns: the callbackFlow emits the raw list,
      * and the subsequent map operator enriches each item with the unread count.
      */
-    fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
+    override fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
 
 
         val roomsFlow = callbackFlow {
@@ -72,7 +85,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
      * A suspend function to fetch the unread message count for a specific room.
      * It queries the messages collection for messages with a timestamp newer than the lastReadTimestamp.
      */
-    private suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int {
+    override suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int {
         return try {
             Log.d(TAG, "Getting unread count for room: $roomId. Comparing with lastReadTimestamp: $lastReadTimestamp")
 
@@ -95,7 +108,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
     /**
      * Marks a specific chat room as read by updating the lastReadTimestamp.
      */
-    suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit> {
+    override suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit> {
         return try {
             db.collection(USER_CHATROOMS_COLLECTION)
                 .document(userId)
@@ -113,7 +126,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
     /**
      * Creates a new chat room and adds it to the user's list.
      */
-    suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
+    override suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
         return try {
             val newRoom = mapOf(
                 "name" to roomName,
@@ -153,7 +166,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
      * Allows a user to join an existing chat room using its ID.
      * It first verifies the room exists and then adds it to the user's chat list.
      */
-    suspend fun joinChatRoom(userId: String, roomId: String): Result<String> {
+    override suspend fun joinChatRoom(userId: String, roomId: String): Result<String> {
         return try {
             // First, get the room's details from the main chatrooms collection
             val roomDocument = db.collection(CHATROOMS_COLLECTION)
@@ -192,7 +205,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun toggleMuteStatus(userId: String, roomId: String, isMuted: Boolean) {
+    override suspend fun toggleMuteStatus(userId: String, roomId: String, isMuted: Boolean) {
         try {
             db.collection(USER_CHATROOMS_COLLECTION)
                 .document(userId)
@@ -205,7 +218,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun deleteChatroomForUser(roomId: String, userId: String): Result<Unit> =
+    override suspend fun deleteChatroomForUser(roomId: String, userId: String): Result<Unit> =
         try {
             // First, delete all messages in the chatroom
             val messagesCollection = db.collection("chatrooms").document(roomId).collection("messages")
@@ -225,7 +238,7 @@ class ChatRoomRepository(private val db: FirebaseFirestore) {
             Result.failure(e)
         }
 
-    suspend fun softDeleteChatroom(roomId: String, userId: String): Result<Unit> =
+    override suspend fun softDeleteChatroom(roomId: String, userId: String): Result<Unit> =
         try {
             db.collection(USER_CHATROOMS_COLLECTION)
                 .document(userId)

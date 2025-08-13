@@ -17,7 +17,25 @@ import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import kotlin.coroutines.resume
 
-class ChatRepository(private val db: FirebaseFirestore) {
+//Interface that will used everywhere
+interface ChatRepository{
+    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit>
+    suspend fun getFailedMessages(roomId: String): List<ChatMessage>
+    suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
+        uploadPreset: String,
+        messageIdForLog: String,
+        onProgress: (progress: Int) -> Unit
+    ): Result<String>
+
+    fun listenToMessages(roomId: String): Flow<List<ChatMessage>>
+    suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit>
+    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String)
+
+    suspend fun markMessageAsRead(chatRoomId: String, messageId: String)
+
+}
+class RealChatRepository(private val db: FirebaseFirestore) : ChatRepository {
 
     companion object {
         const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
@@ -27,7 +45,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
     }
 
 
-    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+    override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
         val messageDocRef = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
@@ -82,7 +100,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
+    override suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
         return try {
             val snapshot = db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
@@ -100,7 +118,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun uploadFileToCloudinaryAndGetUrl(
+    override suspend fun uploadFileToCloudinaryAndGetUrl(
         fileUri: Uri,
         uploadPreset: String, // e.g., "prochat_unsigned_images"
         messageIdForLog: String, // For better logging
@@ -214,7 +232,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
      * Listens for real-time messages from Firestore and emits them as a Flow.
      * This uses the existing ChatMessage data model without modification.
      */
-    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
+    override fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
         val messagesCollection = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
@@ -244,7 +262,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
+    override suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
         return try {
             db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
@@ -259,7 +277,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+    override suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
         try {
             db.collection("chat_rooms")
                 .document(chatRoomId)
@@ -272,7 +290,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+    override suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
         try {
             db.collection("chat_rooms")
                 .document(chatRoomId)
