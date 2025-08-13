@@ -19,21 +19,21 @@ import kotlin.coroutines.resume
  * A fake implementation of ChatRepository for testing purposes.
  * Stores messages in memory and simulates asynchronous operations.
  */
-class FakeChatRepository {
+class FakeChatRepository : ChatRepository{
 
     // Use a backing property to hold the in-memory messages
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
 
     // This simulates the Flow<List<ChatMessage>> returned by the real repository
     // It filters for the correct roomId (though not strictly necessary for this fake)
-    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> {
+    override fun listenToMessages(roomId: String): Flow<List<ChatMessage>> {
         return _messages.map { allMessages ->
             allMessages.filter { it.roomId == roomId }
                 .sortedBy { it.clientTimestamp }
         }
     }
 
-    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+    override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
         // Your real repo sets the status to SENDING initially. We'll simulate that.
         val pendingMessage = message.copy(status = MessageStatus.SENDING)
 
@@ -65,12 +65,12 @@ class FakeChatRepository {
         return Result.success(Unit)
     }
 
-    suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
+    override suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
         // Return a list of messages from our in-memory store that are marked as FAILED
         return _messages.value.filter { it.roomId == roomId && it.status == MessageStatus.FAILED }
     }
 
-    suspend fun uploadFileToCloudinaryAndGetUrl(
+    override suspend fun uploadFileToCloudinaryAndGetUrl(
         fileUri: Uri,
         uploadPreset: String,
         messageIdForLog: String,
@@ -88,7 +88,7 @@ class FakeChatRepository {
         return Result.success("https://fakeurl.com/${UUID.randomUUID()}.jpg")
     }
 
-    suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
+    override suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
         _messages.update { currentMessages ->
             currentMessages.map { msg ->
                 if (msg.id == messageId) {
@@ -103,11 +103,11 @@ class FakeChatRepository {
 
     // These two methods are not used by the fake repo's internal logic but are needed
     // if the ViewModel calls them. We'll add them to avoid compile errors.
-    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+    override suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
         updateMessageStatus(chatRoomId, messageId, MessageStatus.DELIVERED)
     }
 
-    suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+    override suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
         updateMessageStatus(chatRoomId, messageId, MessageStatus.READ)
     }
 

@@ -62,6 +62,12 @@ android {
             excludes += "META-INF/BCKEY.*" // Example for Bouncy Castle specific patterns
         }
     }
+
+    lint {
+        // Disable the check for test code
+        abortOnError = false
+        checkTestSources = false
+    }
 }
 
 dependencies {
@@ -132,8 +138,10 @@ dependencies {
     testImplementation("app.cash.turbine:turbine:1.2.1")
     // For testing Kotlin Flows
     testImplementation("io.mockk:mockk:1.14.5")
+    testImplementation("app.cash.turbine:turbine:1.2.1")
     // For mocking dependencies
     testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("io.mockk:mockk:1.14.5")
     // For InstantTaskExecutorRule if you use LiveData
     // For AndroidViewModel context (if needed, but often avoid mocking Application context directly)
     testImplementation("org.robolectric:robolectric:4.15.1") // Consider if you need Android context

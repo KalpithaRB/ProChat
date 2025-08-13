@@ -3,6 +3,7 @@ package com.kalpi.prochat.ui.presentations.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
 import android.net.Uri
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
@@ -20,10 +21,17 @@ import io.mockk.mockk
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.spyk
+import io.mockk.mockk
+import io.mockk.mockkStatic
+import com.google.firebase.Firebase
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.firestore
+//import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.advanceUntilIdle
 import org.junit.Before
@@ -54,25 +62,30 @@ class ChatViewModelTest {
     private val testRoomId = "test_room_123"
     private val testUserId = "test_user_456"
 
+
     @Before
     fun setup() {
         // Initialize mocks and fakes
         mockApplication = mockk(relaxed = true)
-        mockContext = mockk(relaxed = true)
-        every { mockApplication.applicationContext } returns mockContext
 
-        // Mock the internal instantiation of NetworkStatusObserver
-        mockNetworkStatusObserver = mockk(relaxed = true)
-        // By default, assume network is available
-        every { mockNetworkStatusObserver.observe() } returns flowOf(NetworkStatusObserver.Status.Available)
+        // Mock the ConnectivityManager
+        val mockConnectivityManager = mockk<ConnectivityManager>(relaxed = true)
+
+        // Set up the mock Application to return the mock ConnectivityManager when getSystemService is called
+        every { mockApplication.getSystemService(Context.CONNECTIVITY_SERVICE) } returns mockConnectivityManager
+
+        // We don't need a separate `mockContext` variable, as the `Application` will provide it.
+        // However, if your ViewModel calls `application.applicationContext.getSystemService()`,
+        // you would need to mock the context's getSystemService as well.
+        // Let's assume for now the ViewModel calls getSystemService on the Application directly.
 
         // Use a Spyk on the FakeChatRepository to still be able to verify calls
         fakeChatRepository = spyk(FakeChatRepository())
-        fakeChatRoomRepository = FakeChatRoomRepository()
+        fakeChatRoomRepository = spyk(FakeChatRoomRepository())
 
-        // Initialize the ViewModel with fakes and mocks
+        // Initialize the ViewModel with the mocked application
         viewModel = ChatViewModel(
-            application = mockApplication,
+            application = mockApplication, // The ViewModel receives the mocked Application
             chatRepository = fakeChatRepository,
             chatRoomRepository = fakeChatRoomRepository,
             currentRoomId = testRoomId,
@@ -81,7 +94,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `sendMessage should add message with SENDING status then update to SENT`() = runTest {
+    fun sendMessage_shouldAddMessageWithSendingStatus_thenUpdateToSent() = runTest {
         val testMessageText = "Hello from test!"
         val initialMessages = listOf(
             ChatMessage(id = "1", senderId = "other_user", text = "Hi", roomId = testRoomId)
@@ -117,7 +130,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `retryFailedMessages should re-send messages with FAILED status`() = runTest {
+    fun retryFailedMessages_shouldResendMessagesWithFailedStatus() = runTest {
         val failedMessage = ChatMessage(
             id = "failed_msg_1",
             senderId = testUserId,
@@ -154,7 +167,7 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `prepareAndSendImageMessage should upload file and send final message`() = runTest {
+    fun prepareAndSendImageMessage_shouldUploadFileAndSendFinalMessage() = runTest {
         val dummyImageUri: Uri = mockk()
         every { dummyImageUri.toString() } returns "file:///local/path/to/image.jpg"
 
@@ -197,12 +210,20 @@ class ChatViewModelTest {
 
             // Verify that the repository functions were called
             coVerify(exactly = 1) { fakeChatRepository.uploadFileToCloudinaryAndGetUrl(any(), any(), any(), any()) }
-            coVerify(exactly = 1) { fakeChatRepository.sendMessage(eq(testRoomId), any { it.imageUrl != dummyImageUri.toString() && it.status == MessageStatus.SENT }) }
+            coVerify(exactly = 1) {
+                fakeChatRepository.sendMessage(
+                    eq(testRoomId),
+                    // Use match with a lambda to create a custom matcher
+                    match { message ->
+                        message.imageUrl != dummyImageUri.toString() && message.status == MessageStatus.SENT
+                    }
+                )
+            }
         }
     }
 
     @Test
-    fun `markLastMessageAsRead should update the status of the last incoming message`() = runTest {
+    fun markLastMessageAsRead_shouldUpdateStatusOfLastIncomingMessage() = runTest {
         val incomingMessage = ChatMessage(
             id = "msg_1",
             senderId = "other_user",
@@ -245,11 +266,12 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `deleteChatroom should call repository and emit success on SharedFlow`() = runTest {
+    fun deleteChatroom_shouldCallRepositoryAndEmitSuccessOnSharedFlow() = runTest {
         // Prepare the SharedFlow to be tested
         viewModel.deletionSuccess.test {
             // Set up fake repository to return success
-            fakeChatRoomRepository.deleteChatroomResult = Result.success(Unit)
+            // This line can be removed if you want the default behavior
+            // fakeChatRoomRepository.deleteChatroomResult = Result.success(Unit)
 
             // Trigger the deletion
             viewModel.deleteChatroom()
@@ -260,8 +282,11 @@ class ChatViewModelTest {
             // Verify that the SharedFlow emitted a Unit
             assertNotNull(awaitItem())
         }
-        // Verify that the repository method was called
-        assertTrue(fakeChatRoomRepository.deleteChatroomCalled)
+
+        // Verify that the repository method was called with the correct parameters
+        coVerify(exactly = 1) {
+            fakeChatRoomRepository.deleteChatroomForUser(eq(testRoomId), eq(testUserId))
+        }
     }
 
     // You can write similar tests for:
