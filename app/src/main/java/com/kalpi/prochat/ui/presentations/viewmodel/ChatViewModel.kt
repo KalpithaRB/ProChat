@@ -41,6 +41,7 @@ import java.io.FileOutputStream
 import android.media.MediaRecorder
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.kalpi.prochat.utils.RealNetworkStatusObserver
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -64,6 +65,7 @@ class ChatViewModel (
     application: Application,
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
+    private val networkStatusObserver: NetworkStatusObserver,
     val currentRoomId: String,
     val currentUserId: String
 
@@ -84,7 +86,7 @@ class ChatViewModel (
         }
     }
 
-    private val networkStatusObserver = NetworkStatusObserver(application)
+    //private val networkStatusObserver = RealNetworkStatusObserver(application)
 
 
     private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
@@ -174,6 +176,16 @@ class ChatViewModel (
             // We might add an 'uploadProgress' field to ChatMessage later if needed,
             // or manage progress separately. For now, SENDING status can imply progress.
         )
+
+        // Add the temporary message to the uiState flow so the UI can show it immediately.
+        _uiState.update { currentState ->
+            if (currentState is ChatUiState.Content) {
+                currentState.copy(messages = currentState.messages + ChatItem.Message(tempImageMessage))
+            } else {
+                // Handle other states if necessary, or just return the original state
+                currentState
+            }
+        }
 
         _uploadProgress.update { currentProgress ->
             currentProgress + (tempImageMessage.id to 0)
