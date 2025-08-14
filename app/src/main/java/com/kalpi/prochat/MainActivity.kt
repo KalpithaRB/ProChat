@@ -1,6 +1,7 @@
 package com.kalpi.prochat
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -34,11 +35,15 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.DisposableEffect
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.kalpi.prochat.data.repository.RealChatRepository
+import com.kalpi.prochat.data.repository.RealChatRoomRepository
 
 class MainActivity : ComponentActivity() {
+    @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -71,7 +76,8 @@ class MainActivity : ComponentActivity() {
 
                     if (currentRoomId == null) {
                         // Display the list of chat rooms
-                        val chatRoomRepository = ChatRoomRepository(firestore)
+                        val chatRoomRepository: ChatRoomRepository =
+                            RealChatRoomRepository(firestore)
                         val chatRoomListViewModel: ChatRoomListViewModel = viewModel(
                             factory = ChatRoomListViewModelFactory(chatRoomRepository, uniqueUserId)
                         )
@@ -83,11 +89,15 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     } else {
+                        val context = LocalContext.current
+                        val application = context.applicationContext as Application
                         // Display the chat screen for the selected room
-                        val chatRepository = ChatRepository(firestore)
-                        val chatRoomRepository = ChatRoomRepository(firestore)
+                        val chatRepository: ChatRepository = RealChatRepository(firestore)
+                        val chatRoomRepository: ChatRoomRepository = RealChatRoomRepository(firestore)
+
                         val chatViewModel: ChatViewModel = viewModel(
                             factory = ChatViewModelFactory(
+                                application,
                                 chatRepository,
                                 chatRoomRepository,
                                 currentRoomId!!,
@@ -98,6 +108,10 @@ class MainActivity : ComponentActivity() {
                             chatViewModel = chatViewModel,
                             roomName = currentRoomName ?: "Chat Pro",
                             onBackClicked = {
+                                currentRoomId = null
+                                currentRoomName = null
+                            },
+                            onDeleteSuccess = {
                                 currentRoomId = null
                                 currentRoomName = null
                             }

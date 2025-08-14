@@ -17,7 +17,25 @@ import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import kotlin.coroutines.resume
 
-class ChatRepository(private val db: FirebaseFirestore) {
+//Interface that will used everywhere
+interface ChatRepository{
+    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit>
+    suspend fun getFailedMessages(roomId: String): List<ChatMessage>
+    suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
+        uploadPreset: String,
+        messageIdForLog: String,
+        onProgress: (progress: Int) -> Unit
+    ): Result<String>
+
+    fun listenToMessages(roomId: String): Flow<List<ChatMessage>>
+    suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit>
+    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String)
+
+    suspend fun markMessageAsRead(chatRoomId: String, messageId: String)
+
+}
+class RealChatRepository(private val db: FirebaseFirestore) : ChatRepository {
 
     companion object {
         const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
@@ -26,15 +44,20 @@ class ChatRepository(private val db: FirebaseFirestore) {
         private const val MESSAGES_COLLECTION = "messages"
     }
 
-    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+
+    override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+        val messageDocRef = db.collection(CHATROOMS_COLLECTION)
+            .document(roomId)
+            .collection(MESSAGES_COLLECTION)
+            .document(message.id)
+
+        // Initially save the message with the PENDING status.
+        // This allows the message to appear in the UI while it's being sent.
+        val pendingMessage = message.copy(status = MessageStatus.SENDING)
+
         return try {
             // Step 1: Save the message to the chatroom's message subcollection
-            val messageDocRef = db.collection(CHATROOMS_COLLECTION)
-                .document(roomId)
-                .collection(MESSAGES_COLLECTION)
-                .document(message.id)
-            messageDocRef.set(message).await()
-            messageDocRef.update("status", MessageStatus.SENT.name).await()
+            messageDocRef.set(pendingMessage).await()
 
             // Step 2 & 3: Update the chatroom documents for EACH participant
             val chatRoomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
@@ -44,13 +67,9 @@ class ChatRepository(private val db: FirebaseFirestore) {
 
             for (participantId in participants) {
                 val updates = mutableMapOf<String, Any>()
-
-                // FIX: Use the Elvis operator to handle nullable text
                 updates["lastMessage"] = message.text ?: ""
                 updates["lastTimestamp"] = message.clientTimestamp
 
-                // NEW LOGIC: If the participant is the sender,
-                // we also update their lastReadTimestamp
                 if (participantId == message.senderId) {
                     updates["lastReadTimestamp"] = message.clientTimestamp
                 }
@@ -62,18 +81,45 @@ class ChatRepository(private val db: FirebaseFirestore) {
                     .await()
             }
 
+            // Step 4: If all writes were successful, update the status to SENT
+            messageDocRef.update("status", MessageStatus.SENT.name).await()
             Log.d(TAG, "Message sent and chatroom documents updated for all participants in room: $roomId")
             Result.success(Unit)
+
         } catch (e: Exception) {
             Log.e(TAG, "Error sending message or updating chatroom documents", e)
+            // If anything fails, update the message status to FAILED
+            // so it can be retried later. We use a separate try-catch for this
+            // final write to avoid a nested failure.
+            try {
+                messageDocRef.update("status", MessageStatus.FAILED.name).await()
+            } catch (updateError: Exception) {
+                Log.e(TAG, "Failed to update message status to FAILED", updateError)
+            }
             Result.failure(e)
         }
     }
-    // Placeholder for Day 3
-    // fun getMessagesFlow(roomId: String): Flow<List<ChatMessage>> { ... }
 
-    suspend fun uploadImageToCloudinaryAndGetUrl(
-        imageUri: Uri,
+    override suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
+        return try {
+            val snapshot = db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection(MESSAGES_COLLECTION)
+                .whereEqualTo("status", MessageStatus.FAILED.name)
+                .get()
+                .await()
+
+            snapshot.documents.mapNotNull { document ->
+                document.toObject(ChatMessage::class.java)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting failed messages for room $roomId", e)
+            emptyList()
+        }
+    }
+
+    override suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
         uploadPreset: String, // e.g., "prochat_unsigned_images"
         messageIdForLog: String, // For better logging
         onProgress: (progress: Int) -> Unit
@@ -92,9 +138,9 @@ class ChatRepository(private val db: FirebaseFirestore) {
         // +++ END DIAGNOSTIC LOG +++
 
         return suspendCancellableCoroutine { continuation ->
-            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $imageUri")
+            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $fileUri")
 
-            val request = MediaManager.get().upload(imageUri)
+            val request = MediaManager.get().upload(fileUri)
                 .unsigned(uploadPreset) // Use your unsigned upload preset
                 .option(
                     "public_id",
@@ -186,7 +232,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
      * Listens for real-time messages from Firestore and emits them as a Flow.
      * This uses the existing ChatMessage data model without modification.
      */
-    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
+    override fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
         val messagesCollection = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
@@ -213,6 +259,47 @@ class ChatRepository(private val db: FirebaseFirestore) {
         // The awaitClose block is important to cancel the listener when the Flow is no longer needed
         awaitClose {
             subscription.remove()
+        }
+    }
+
+    override suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
+        return try {
+            db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection(MESSAGES_COLLECTION)
+                .document(messageId)
+                .update("status", newStatus.name)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating message status for message $messageId", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.DELIVERED)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
+        }
+    }
+
+    override suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.READ)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
         }
     }
 }

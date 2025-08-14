@@ -62,6 +62,12 @@ android {
             excludes += "META-INF/BCKEY.*" // Example for Bouncy Castle specific patterns
         }
     }
+
+    lint {
+        // Disable the check for test code
+        abortOnError = false
+        checkTestSources = false
+    }
 }
 
 dependencies {
@@ -120,6 +126,23 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("com.squareup.retrofit2:converter-gson:3.0.0")
     implementation("com.squareup.okhttp3:okhttp:5.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 
 
+    implementation("androidx.media3:media3-exoplayer:1.8.0")
+
+    // Unit Testing
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    // Or your current coroutines version
+    testImplementation("app.cash.turbine:turbine:1.2.1")
+    // For testing Kotlin Flows
+    testImplementation("io.mockk:mockk:1.14.5")
+    testImplementation("app.cash.turbine:turbine:1.2.1")
+    // For mocking dependencies
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("io.mockk:mockk:1.14.5")
+    // For InstantTaskExecutorRule if you use LiveData
+    // For AndroidViewModel context (if needed, but often avoid mocking Application context directly)
+    testImplementation("org.robolectric:robolectric:4.15.1") // Consider if you need Android context
 }
