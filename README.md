@@ -284,3 +284,49 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+---
+## Day 5 – Unit Testing, Refactoring & Error Handling
+---
+
+### What Was Done
+
+We expanded our unit testing of the `ChatViewModel` to cover several core chat functionalities. This included testing the entire lifecycle of a message, from sending to retrying, as well as specific features like marking a message as read and handling chatroom deletion. The key test functions we implemented and analyzed were:
+
+-   `sendMessage_shouldAddMessageWithSendingStatus_thenUpdateToSent`: Validates the full process of sending a text message, including the UI state transitions from `SENDING` to `SENT`.
+-   `retryFailedMessages_shouldResendMessagesWithFailedStatus`: Tests the functionality for retrying messages that previously failed to send. It confirms the status correctly changes from `FAILED` to `SENDING` and then `SENT`.
+-   `prepareAndSendImageMessage_shouldUploadFileAndSendFinalMessage`: A variation of the file upload test, specifically for images, which verifies that the temporary local URI is replaced by a remote URL upon successful upload.
+-   `markLastMessageAsRead_shouldUpdateStatusOfLastIncomingMessage`: Checks the logic for updating a message's status. It ensures that an incoming message's status is correctly updated from `DELIVERED` to `READ`.
+-   `deleteChatroom_shouldCallRepositoryAndEmitSuccessOnSharedFlow`: Verifies that the ViewModel correctly initiates the chatroom deletion process and emits a success signal on a `SharedFlow` for UI observation.
+
+***
+
+### Key Decisions
+
+1.  **Using `Fake` Repositories**: Instead of using mock objects for every call, we used `FakeChatRepository` and `FakeChatRoomRepository`. These are classes that implement the repository interfaces but are designed for testing. This decision allowed us to manage a simulated internal state (like a list of messages) and provided a more realistic testing environment. We used `spyk` on these fakes to both simulate their behavior and verify that their methods were called. 
+2.  **Verifying State Transitions with `Turbine`**: For tests like `sendMessage` and `retryFailedMessages`, we used multiple `awaitItem()` calls to verify the state transitions. For example, in `sendMessage`, we first awaited the `SENDING` state and then the final `SENT` state after calling `advanceUntilIdle()`. This ensures that the ViewModel's state is correctly reflecting the asynchronous operations.
+3.  **Asserting on SharedFlows**: For a one-time event like `deleteChatroom_shouldCallRepositoryAndEmitSuccessOnSharedFlow`, we used `Turbine` to collect from the `deletionSuccess` `SharedFlow`. This is an ideal way to test `SharedFlows`, as it allows you to `awaitItem()` and verify that the event was correctly emitted.
+4.  **Flexible Verification**: In some tests, like `prepareAndSendImageMessage`, we opted for `coVerify(atLeast = 1)` instead of `exactly = 1`. This decision provides more flexibility for scenarios where a function might be called multiple times internally, as long as it's called at least once. This is a pragmatic choice to avoid test brittleness caused by minor implementation details.
+5.  **Comprehensive Mocking**: We meticulously mocked all dependencies, including static utility methods (`FileDetailsUtilKt`) and Android system services (`Log`, `ConnectivityManager`), using `mockkStatic` and `mockk`. This ensured a fully isolated and reliable unit test environment, preventing external factors from influencing the test results.
+
+***
+
+### How to Run/Test
+
+The unit tests are designed to be executed within the standard Android testing framework.
+
+-   **Android Studio**: To run all tests in the `ChatViewModelTest` class, right-click the class name and select "Run 'ChatViewModelTest'". You can also run individual test functions by right-clicking their names.
+-   **Gradle Command**: To run the entire test class from the terminal, you would use:
+    `./gradlew :app:testDebugUnitTest --tests "com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelTest"`
+
+***
+
+### Test Coverage Explanation
+
+The added test functions significantly expand our unit test coverage for the `ChatViewModel`. We're now covering:
+
+-   **Happy Paths**: `sendMessage` and `prepareAndSendImageMessage` cover the most common success cases for both text and file messages.
+-   **Error Handling and Retry Logic**: `retryFailedMessages` is a crucial test for a chat application. It ensures that the app can recover from network failures and that the UI state correctly reflects this process.
+-   **User Actions**: `markLastMessageAsRead` and `deleteChatroom` test the ViewModel's response to specific user-initiated actions, confirming that the correct repository methods are called and the UI state is updated.
+
+By using `Fake` repositories and `Turbine`, we have created robust and comprehensive tests that validate not only the ViewModel's public API but also its internal state changes over time. This approach provides a high degree of confidence that the ViewModel is working correctly.
+
