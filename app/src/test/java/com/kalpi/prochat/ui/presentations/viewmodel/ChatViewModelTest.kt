@@ -18,6 +18,9 @@ import com.kalpi.prochat.data.ChatItem
 import com.kalpi.prochat.utils.MainDispatcherRule
 import com.kalpi.prochat.data.repository.FakeChatRepository // Your FakeChatRepository
 import com.kalpi.prochat.data.repository.FakeChatRoomRepository // Your FakeChatRoomRepository
+import com.kalpi.prochat.utils.getFileSizeFromUri
+import com.kalpi.prochat.utils.getFileNameFromUri
+import com.kalpi.prochat.utils.getFileTypeFromUri
 import app.cash.turbine.test
 import io.mockk.mockk
 import io.mockk.coVerify
@@ -34,6 +37,7 @@ import io.mockk.slot
 import kotlinx.coroutines.CompletableDeferred
 //import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -337,4 +341,88 @@ class ChatViewModelTest {
     // - `prepareAndSendFileMessage` by adapting the `prepareAndSendImageMessage` test.
     // - `prepareAndSendAudioMessage` by adapting the `prepareAndSendImageMessage` test.
     // - `processDeliveredStatus` by having the fake repo emit a SENT message from another user.
+
+    @Test
+    fun prepareAndSendFileMessage_shouldUploadFileAndSendFinalMessage() = runTest {
+        // 1. Arrange: Setup mocks and test data.
+        val dummyFileUri: Uri = mockk()
+        val dummyFileName = "document.pdf"
+        val dummyFileMimeType = "application/pdf"
+        val dummyFileSize = 1024L // 1 KB
+        val fakeRemoteUrl = "https://fakeurl.com/document.pdf"
+
+        mockkStatic("com.kalpi.prochat.utils.FileDetailsUtilKt")
+        coEvery { getFileNameFromUri(any(), any()) } returns dummyFileName
+        coEvery { getFileTypeFromUri(any(), any()) } returns dummyFileMimeType
+        coEvery { getFileSizeFromUri(any(), any()) } returns dummyFileSize
+
+        // Mock the repository call to simulate a successful upload
+        coEvery {
+            fakeChatRepository.uploadFileToCloudinaryAndGetUrl(
+                fileUri = any(),
+                uploadPreset = any(),
+                messageIdForLog = any(),
+                onProgress = any()
+            )
+        } coAnswers {
+            val onProgress = lastArg<(Int) -> Unit>()
+            onProgress(0)
+            delay(10)
+            onProgress(50)
+            delay(10)
+            onProgress(100)
+            delay(10)
+            Result.success(fakeRemoteUrl)
+        }
+
+        // Mock the getFailedMessages call to return an empty list.
+        coEvery { fakeChatRepository.getFailedMessages(testRoomId) } returns emptyList()
+        fakeChatRepository.clearMessages()
+
+        viewModel.uiState.test {
+            // Await and consume all initial emissions before the action.
+            // This is more robust than multiple awaitItem() calls.
+            skipItems(2) // Skips the initial Loading and the initial empty Content.
+
+            // 2. Act: Call the function to be tested.
+            viewModel.prepareAndSendFileMessage(dummyFileUri)
+
+            // 3. Assert Intermediate State:
+            val sendingState = awaitItem() as ChatUiState.Content
+            val sendingMessage = sendingState.messages.filterIsInstance<ChatItem.Message>().first().message
+            assertEquals(MessageStatus.SENDING, sendingMessage.status)
+            assertEquals(dummyFileName, sendingMessage.fileName)
+            assertEquals(dummyFileMimeType, sendingMessage.fileType)
+
+            // 4. Let all pending coroutines finish.
+            advanceUntilIdle()
+
+            // 5. Assert Final State:
+            val finalState = awaitItem() as ChatUiState.Content
+            val finalMessage = finalState.messages.filterIsInstance<ChatItem.Message>().first().message
+            assertEquals(MessageStatus.SENT, finalMessage.status)
+            assertEquals(fakeRemoteUrl, finalMessage.fileUrl)
+            assertEquals(dummyFileName, finalMessage.fileName)
+
+            // 6. Verify: The atLeast = 1 is fine here.
+            coVerify(atLeast = 1) {
+                fakeChatRepository.uploadFileToCloudinaryAndGetUrl(
+                    fileUri = eq(dummyFileUri),
+                    uploadPreset = eq("prochat_unsigned_files"),
+                    messageIdForLog = any(),
+                    onProgress = any()
+                )
+            }
+            coVerify(atLeast = 1) {
+                fakeChatRepository.sendMessage(
+                    eq(testRoomId),
+                    match { message ->
+                        message.fileUrl == fakeRemoteUrl && message.status == MessageStatus.SENT
+                    }
+                )
+            }
+        }
+    }
+
+
 }
