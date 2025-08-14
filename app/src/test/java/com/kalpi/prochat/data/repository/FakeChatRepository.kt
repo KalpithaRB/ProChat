@@ -66,27 +66,19 @@ class FakeChatRepository : ChatRepository{
 //    }
 
     override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
-        // Your real repo sets the status to SENDING initially. We'll simulate that.
-        val pendingMessage = message.copy(status = MessageStatus.SENDING)
+        // The repository only stores successfully sent messages
+        // No need to simulate SENDING → SENT transition since ViewModel handles that
+        val sentMessage = message.copy(
+            status = MessageStatus.SENT,
+            //serverTimestamp = System.currentTimeMillis() // Add server timestamp if needed
+        )
 
-        // Step 1: Add the pending message to our in-memory list and emit it.
-        // This will be the first state your test awaits.
         _messages.update { currentMessages ->
-            currentMessages + pendingMessage
+            // Remove any existing message with the same ID and add the new sent message
+            val filteredMessages = currentMessages.filter { it.id != message.id }
+            filteredMessages + sentMessage
         }
 
-        // Simulate network delay for the Firestore write
-        delay(10)
-
-        // Step 2: Simulate a successful network update to the SENT status.
-        // We'll remove the old message and add the new one to trigger a new state emission.
-        val sentMessage = message.copy(status = MessageStatus.SENT)
-        _messages.update { currentMessages ->
-            val listWithoutPending = currentMessages.filter { it.id != pendingMessage.id }
-            listWithoutPending + sentMessage
-        }
-
-        // Return a success result to match the real repository
         return Result.success(Unit)
     }
 

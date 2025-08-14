@@ -42,6 +42,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.kalpi.prochat.utils.RealNetworkStatusObserver
+import kotlinx.coroutines.flow.combine
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -89,15 +90,26 @@ class ChatViewModel (
     //private val networkStatusObserver = RealNetworkStatusObserver(application)
 
 
-    private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
+    //private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
+
+    // NEW: Add a new MutableStateFlow to hold temporary messages (like sending images/files)
+    private val _tempMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     /**
      * Publicly exposed [StateFlow] of the [ChatUiState].
      * The UI (ChatScreen) will observe this flow for updates.
      */
     val uiState: StateFlow<ChatUiState> = chatRepository.listenToMessages(currentRoomId)
-        .onEach { messages ->
-            // Use onEach to process the list before it's passed to the UI
-            processDeliveredStatus(messages)
+        .combine(_tempMessages) { repoMessages, tempMessages ->
+            // NEW: Combine messages from the repository and our temporary messages.
+            // The `groupBy` and `maxByOrNull` logic ensures we prioritize the most recent
+            // version of a message if it exists in both lists (e.g., the SENT message from the repo
+            // will replace the SENDING message from the tempMessages list).
+            val allMessages = (repoMessages + tempMessages)
+                .groupBy { it.id }
+                .map { (_, messages) -> messages.maxByOrNull { it.clientTimestamp }!! }
+                .sortedBy { it.clientTimestamp }
+            processDeliveredStatus(allMessages)
+            allMessages
         }
         .map { messages ->
             processMessagesAndUpdateState(messages)
@@ -178,13 +190,8 @@ class ChatViewModel (
         )
 
         // Add the temporary message to the uiState flow so the UI can show it immediately.
-        _uiState.update { currentState ->
-            if (currentState is ChatUiState.Content) {
-                currentState.copy(messages = currentState.messages + ChatItem.Message(tempImageMessage))
-            } else {
-                // Handle other states if necessary, or just return the original state
-                currentState
-            }
+        _tempMessages.update { currentMessages ->
+            currentMessages + tempImageMessage
         }
 
         _uploadProgress.update { currentProgress ->
@@ -214,11 +221,20 @@ class ChatViewModel (
                         status = MessageStatus.SENT
                     )
                     chatRepository.sendMessage(currentRoomId, finalImageMessage)
+                    //  Remove the temporary message from the flow. The combined uiState
+                    // will now show only the final message from the repository. This is the second
+                    // and final state emission for the test.
+                    _tempMessages.update { currentMessages ->
+                        currentMessages.filter { it.id != tempImageMessage.id }
+                    }
                 } else {
                     Log.e(TAG, "Image upload succeeded but URL was null.")
                 }
             } else {
                 Log.e(TAG, "Image upload failed: ${uploadResult.exceptionOrNull()?.message}")
+                _tempMessages.update { currentMessages ->
+                    currentMessages.map { if (it.id == tempImageMessage.id) it.copy(status = MessageStatus.FAILED) else it }
+                }
             }
         }
     }
@@ -239,7 +255,7 @@ class ChatViewModel (
                 return@launch
             }
 
-            // CORRECTED: The ChatMessage constructor is now fully explicit to avoid ambiguity.
+            // The ChatMessage constructor is now fully explicit to avoid ambiguity.
             // This is the source of your first error.
             val messageId = UUID.randomUUID().toString()
             val tempFileMessage = ChatMessage(
@@ -256,7 +272,11 @@ class ChatViewModel (
                 roomId = currentRoomId
             )
 
-            // This is the source of your second error.
+            // Add the temporary message to the _tempMessages flow.
+            _tempMessages.update { currentMessages ->
+                currentMessages + tempFileMessage
+            }
+
             // By declaring tempFileMessage above, it is now in scope for the rest of the function.
             _uploadProgress.update { currentProgress ->
                 currentProgress + (tempFileMessage.id to 0)
@@ -283,9 +303,19 @@ class ChatViewModel (
                     status = MessageStatus.SENT
                 )
                 chatRepository.sendMessage(currentRoomId, finalFileMessage)
+
+                // Remove the temporary message from the flow.
+                _tempMessages.update { currentMessages ->
+                    currentMessages.filter { it.id != tempFileMessage.id }
+                }
+
             }.onFailure { e ->
                 Log.e(TAG, "File upload failed: ${e.message}")
-                chatRepository.updateMessageStatus(currentRoomId, messageId, MessageStatus.FAILED)
+
+                // Update the status of the temporary message to FAILED
+                _tempMessages.update { currentMessages ->
+                    currentMessages.map { if (it.id == tempFileMessage.id) it.copy(status = MessageStatus.FAILED) else it }
+                }
             }
         }
     }
@@ -333,7 +363,7 @@ class ChatViewModel (
         }
     }
 
-    // NEW: Add a SharedFlow to emit the URI for the file to the UI
+    //  Add a SharedFlow to emit the URI for the file to the UI
     private val _exportFileUri = MutableSharedFlow<Uri>()
     val exportFileUri: SharedFlow<Uri> = _exportFileUri
 
@@ -349,16 +379,16 @@ class ChatViewModel (
             val fileName = "chat_export_${currentRoomId}.txt"
             val fileContent = createChatTextContent(currentMessages)
 
-            // CORRECTED: Use getApplication<Application>() to get the context
+            // Use getApplication<Application>() to get the context
             val file = File(getApplication<Application>().cacheDir, fileName)
 
             try {
-                // CORRECTED: The use block now works correctly
+                //  The use block now works correctly
                 FileOutputStream(file).use {
                     it.write(fileContent.toByteArray())
                 }
 
-                // CORRECTED: Use getApplication<Application>() to get the context
+                //  Use getApplication<Application>() to get the context
                 val uri = FileProvider.getUriForFile(
                     getApplication(),
                     "${getApplication<Application>().packageName}.fileprovider",
@@ -601,7 +631,9 @@ class ChatViewModel (
                 status = MessageStatus.SENDING,
                 roomId = currentRoomId
             )
-            chatRepository.sendMessage(currentRoomId, tempAudioMessage)
+            _tempMessages.update { currentMessages ->
+                currentMessages + tempAudioMessage
+            }
 
 
             val uploadPreset = "prochat_unsigned_audios"
@@ -623,9 +655,16 @@ class ChatViewModel (
                     status = MessageStatus.SENT
                 )
                 chatRepository.sendMessage(currentRoomId, finalAudioMessage)
+                _tempMessages.update { currentMessages ->
+                    currentMessages.filter { it.id != tempAudioMessage.id }
+                }
+
             }.onFailure { e ->
                 Log.e(TAG, "Audio upload failed: ${e.message}")
-                chatRepository.updateMessageStatus(currentRoomId, messageId, MessageStatus.FAILED)
+                //  Update the status of the temporary message to FAILED
+                _tempMessages.update { currentMessages ->
+                    currentMessages.map { if (it.id == tempAudioMessage.id) it.copy(status = MessageStatus.FAILED) else it }
+                }
             }
         }
     }
