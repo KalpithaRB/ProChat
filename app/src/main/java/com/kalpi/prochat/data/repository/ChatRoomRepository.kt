@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import android.util.Log
 import com.google.firebase.firestore.Query
+import com.kalpi.prochat.data.model.Member
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
@@ -18,11 +19,17 @@ interface ChatRoomRepository{
     fun listenToChatRooms(userId: String): Flow<List<ChatRoom>>
     suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int
     suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit>
-    suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String>
+    suspend fun createDirectChatRoom(roomName: String, participantIds: List<String>): Result<String>
     suspend fun joinChatRoom(userId: String, roomId: String): Result<String>
     suspend fun toggleMuteStatus(userId: String, roomId: String, isMuted: Boolean)
     suspend fun deleteChatroomForUser(roomId: String, userId: String): Result<Unit>
     suspend fun softDeleteChatroom(roomId: String, userId: String): Result<Unit>
+
+    suspend fun createGroupChatRoom(roomTitle: String, initialMembers: List<String>, createdBy: String): Result<String>
+    suspend fun addMemberToGroup(roomId: String, userId: String, addedBy: String): Result<Unit>
+    suspend fun removeMemberFromGroup(roomId: String, userId: String): Result<Unit>
+
+    suspend fun getChatRoomDetails(roomId: String): ChatRoom?
 
 
 }
@@ -43,8 +50,6 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
      * and the subsequent map operator enriches each item with the unread count.
      */
     override fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
-
-
         val roomsFlow = callbackFlow {
             val roomsCollection = db.collection(USER_CHATROOMS_COLLECTION)
                 .document(userId)
@@ -67,16 +72,23 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             awaitClose { subscription.remove() }
         }
 
-        // Map over the flow of rooms to add the unread count for each one.
-        // We use a coroutineScope with async/awaitAll to perform the count queries in parallel.
+        // Now we map over the flow to get the full chatroom details and unread count.
         return roomsFlow.map { chatRooms ->
             coroutineScope {
                 chatRooms.map { chatRoom ->
                     async {
+                        val fullChatRoom = getChatRoomDetails(chatRoom.roomId)
                         val unreadCount = getUnreadCountForRoom(chatRoom.roomId, chatRoom.lastReadTimestamp)
-                        chatRoom.copy(unreadCount = unreadCount)
+                        // Copy the full details, then add the user-specific info like unread count
+                        fullChatRoom?.copy(
+                            unreadCount = unreadCount,
+                            lastMessage = chatRoom.lastMessage,
+                            lastTimestamp = chatRoom.lastTimestamp,
+                            lastReadTimestamp = chatRoom.lastReadTimestamp,
+                            muted = chatRoom.muted
+                        ) ?: chatRoom.copy(unreadCount = unreadCount)
                     }
-                }.awaitAll()
+                }.awaitAll().filterNotNull()
             }
         }
     }
@@ -126,12 +138,14 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
     /**
      * Creates a new chat room and adds it to the user's list.
      */
-    override suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
+    override suspend fun createDirectChatRoom(roomName: String, participantIds: List<String>): Result<String> {
         return try {
             val newRoom = mapOf(
-                "name" to roomName,
+                // Use 'title' for consistency, but for DMs, it can be the other user's name
+                "type" to "dm",
+                "title" to roomName, // The name of the other user in a DM
                 "createdAt" to System.currentTimeMillis(),
-                "participants" to participantIds
+                "participants" to participantIds // Storing participants for DMs is fine
             )
             val newRoomRef = db.collection(CHATROOMS_COLLECTION).add(newRoom).await()
             val newRoomId = newRoomRef.id
@@ -139,7 +153,8 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             // Create a document for each participant
             participantIds.forEach { userId ->
                 val userRoomData = mapOf(
-                    "name" to roomName,
+                    "type" to "dm", // New: Add type to the user's room list
+                    "title" to roomName, // New: Add title to the user's room list
                     "lastMessage" to "Room created.",
                     "lastTimestamp" to System.currentTimeMillis(),
                     "lastReadTimestamp" to System.currentTimeMillis(),
@@ -153,12 +168,95 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                     .await()
             }
 
-            Log.d(TAG, "Successfully created new room with ID: $newRoomId for participants: $participantIds")
+            Log.d(TAG, "Successfully created new DM room with ID: $newRoomId for participants: $participantIds")
             Result.success(newRoomId)
 
         } catch (e: Exception) {
             Log.e(TAG, "Error creating new chat room", e)
             Result.failure(e)
+        }
+    }
+
+    override suspend fun createGroupChatRoom(
+        roomTitle: String,
+        initialMembers: List<String>,
+        createdBy: String
+    ): Result<String> {
+        return try {
+            // Step 1: Create a new group chat room document
+            val newRoomData = ChatRoom(
+                type = "group",
+                title = roomTitle,
+                createdBy = createdBy,
+                createdAt = System.currentTimeMillis()
+            )
+            val newRoomRef = db.collection(CHATROOMS_COLLECTION).add(newRoomData).await()
+            val newRoomId = newRoomRef.id
+
+            // Step 2: Create a transaction to add initial members and update user rooms
+            db.runTransaction { transaction ->
+                // Add initial members to the 'members' subcollection
+                for (userId in initialMembers) {
+                    val memberRole = if (userId == createdBy) "admin" else "member"
+                    val memberData = Member(
+                        userId = userId,
+                        role = memberRole,
+                        joinedAt = System.currentTimeMillis()
+                    )
+                    val memberDocRef = newRoomRef.collection("members").document(userId)
+                    transaction.set(memberDocRef, memberData)
+                }
+
+                // Update user's list of rooms for all participants
+                for (userId in initialMembers) {
+                    val userRoomData = mapOf(
+                        "roomId" to newRoomId,
+                        "type" to "group",
+                        "title" to roomTitle,
+                        "lastMessage" to "Group created.",
+                        "lastTimestamp" to System.currentTimeMillis(),
+                        "lastReadTimestamp" to System.currentTimeMillis(),
+                        "isDeleted" to false
+                    )
+                    val userChatRoomDocRef = db.collection(USER_CHATROOMS_COLLECTION)
+                        .document(userId)
+                        .collection(CHATROOMS_SUB_COLLECTION)
+                        .document(newRoomId)
+                    transaction.set(userChatRoomDocRef, userRoomData)
+                }
+                null // Transaction success
+            }.await()
+
+            Log.d(TAG, "Successfully created new group room with ID: $newRoomId")
+            Result.success(newRoomId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating new group chat room", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun addMemberToGroup(
+        roomId: String,
+        userId: String,
+        addedBy: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun removeMemberFromGroup(
+        roomId: String,
+        userId: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getChatRoomDetails(roomId: String): ChatRoom? {
+        return try {
+            val document = db.collection(CHATROOMS_COLLECTION).document(roomId).get().await()
+            document.toObject(ChatRoom::class.java)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting chat room details for room $roomId", e)
+            null
         }
     }
 
