@@ -28,7 +28,10 @@ import io.mockk.mockkStatic
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
+import io.mockk.coEvery
 import io.mockk.mockkConstructor
+import io.mockk.slot
+import kotlinx.coroutines.CompletableDeferred
 //import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -44,6 +47,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import java.io.File
+import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModelTest {
@@ -148,6 +152,7 @@ class ChatViewModelTest {
 
     @Test
     fun retryFailedMessages_shouldResendMessagesWithFailedStatus() = runTest {
+        // 1. Arrange: Add a failed message to the repository.
         val failedMessage = ChatMessage(
             id = "failed_msg_1",
             senderId = testUserId,
@@ -160,26 +165,33 @@ class ChatViewModelTest {
         fakeChatRepository.addMessage(failedMessage)
 
         viewModel.uiState.test {
-            // Await the initial state which contains the failed message
+            // 2. Await the initial state, which should contain the failed message.
             val initialState = awaitItem() as ChatUiState.Content
-            assertEquals(MessageStatus.FAILED, initialState.messages.filterIsInstance<ChatItem.Message>().first().message.status)
+            val messageFromState = initialState.messages.filterIsInstance<ChatItem.Message>().first().message
+            assertEquals(MessageStatus.FAILED, messageFromState.status)
 
+            // 3. Act: Trigger the retry function.
             viewModel.retryFailedMessages()
 
-            // After retry, the message should briefly show SENDING
+            // 4. Assert the intermediate state (optional, but good practice for robustness).
+            // The message status should change to SENDING.
             val retryingState = awaitItem() as ChatUiState.Content
-            assertEquals(MessageStatus.SENDING, retryingState.messages.filterIsInstance<ChatItem.Message>().first().message.status)
+            val retryingMessage = retryingState.messages.filterIsInstance<ChatItem.Message>().first().message
+            assertEquals(MessageStatus.SENDING, retryingMessage.status)
 
-            // Let the coroutine finish the simulated network call
+            // 5. Advance time to let the simulated network call complete.
             advanceUntilIdle()
 
-            // Wait for the final state where the message is SENT
+            // 6. Assert the final state.
+            // The message status should now be SENT.
             val sentState = awaitItem() as ChatUiState.Content
-            assertEquals(MessageStatus.SENT, sentState.messages.filterIsInstance<ChatItem.Message>().first().message.status)
+            val sentMessage = sentState.messages.filterIsInstance<ChatItem.Message>().first().message
+            assertEquals(MessageStatus.SENT, sentMessage.status)
 
-            // Verify that getFailedMessages and sendMessage were called
-            coVerify(exactly = 1) { fakeChatRepository.getFailedMessages(eq(testRoomId)) }
+            // 7. Verify the interactions with the repository.
+            coVerify(exactly = 2) { fakeChatRepository.getFailedMessages(eq(testRoomId)) }
             coVerify(exactly = 1) { fakeChatRepository.sendMessage(eq(testRoomId), any()) }
+
         }
     }
 
@@ -188,43 +200,71 @@ class ChatViewModelTest {
         // 1. Arrange: Setup mocks and test data.
         val dummyImageUri: Uri = mockk()
         every { dummyImageUri.toString() } returns "file:///local/path/to/image.jpg"
+        val remoteImageUrl = "https://fakeurl.com/${UUID.randomUUID()}.jpg"
+
+        // Set up a CompletableDeferred to control the upload result
+        val uploadDeferred = CompletableDeferred<Result<String>>()
+        val progressCaptor = slot<(Int) -> Unit>()
+
+        // Mock the upload function to suspend and wait for our signal.
+        // This correctly simulates the network delay.
+        coEvery {
+            fakeChatRepository.uploadFileToCloudinaryAndGetUrl(
+                fileUri = any(),
+                uploadPreset = any(),
+                messageIdForLog = any(),
+                onProgress = capture(progressCaptor)
+            )
+        } coAnswers {
+            // Immediately emit a progress update to simulate the start of upload
+            progressCaptor.captured.invoke(10)
+            // Await the deferred result, which will suspend the coroutine
+            uploadDeferred.await()
+        }
+
+        // IMPORTANT: Reset the `_messages` flow to an empty list to ensure a clean slate.
+        // This should be done in your @Before setup method or here.
+        fakeChatRepository.clearMessages()
 
         viewModel.uiState.test {
-            // 2. Await the initial state of the ViewModel after initialization.
+            // 2. Await the initial state of the ViewModel.
+            // This is the initial empty list from the repository.
             val initialState = awaitItem() as ChatUiState.Content
             assertEquals(0, initialState.messages.size)
 
             // 3. Act: Call the function to be tested.
             viewModel.prepareAndSendImageMessage(dummyImageUri)
 
-            // 4. Assert Intermediate State:
-            // Await the state where the temporary message with the local URI is added.
+            // Now, we expect a new state to be emitted containing the temporary message.
             val sendingState = awaitItem() as ChatUiState.Content
             val sendingMessage = sendingState.messages.filterIsInstance<ChatItem.Message>().first().message
             assertEquals(MessageStatus.SENDING, sendingMessage.status)
-            // This assertion is now correctly placed to check for the local URI.
             assertEquals(dummyImageUri.toString(), sendingMessage.imageUrl)
 
-            // 5. Advance Coroutines:
-            // Complete all pending coroutines, including the file upload and the final message sending.
+            // 4. Complete the upload and let the ViewModel resume its work.
+            // This will unblock the upload coroutine.
+            uploadDeferred.complete(Result.success(remoteImageUrl))
+
+            // Let all pending coroutines, including the sendMessage call, finish.
+            // This will update the FakeChatRepository's flow, which in turn updates uiState.
+            // `advanceUntilIdle` here ensures everything completes.
             advanceUntilIdle()
 
-            // 6. Assert Final State:
+            // 5. Assert Final State:
             // Await the next state where the message status is SENT and the URL is the remote one.
             val finalState = awaitItem() as ChatUiState.Content
             val finalMessage = finalState.messages.filterIsInstance<ChatItem.Message>().first().message
             assertEquals(MessageStatus.SENT, finalMessage.status)
-            // This assertion correctly checks for the remote URL.
-            assertTrue(finalMessage.imageUrl!!.startsWith("https://fakeurl.com"))
+            assertEquals(remoteImageUrl, finalMessage.imageUrl)
 
-            // 7. Verify:
+            // 6. Verify:
             // Ensure the correct repository functions were called.
             coVerify(exactly = 1) { fakeChatRepository.uploadFileToCloudinaryAndGetUrl(any(), any(), any(), any()) }
             coVerify(exactly = 1) {
                 fakeChatRepository.sendMessage(
                     eq(testRoomId),
                     match { message ->
-                        message.imageUrl != dummyImageUri.toString() && message.status == MessageStatus.SENT
+                        message.imageUrl == remoteImageUrl && message.status == MessageStatus.SENT
                     }
                 )
             }

@@ -33,32 +33,57 @@ class FakeChatRepository : ChatRepository{
         }
     }
 
+//    override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+//        // Your real repo sets the status to SENDING initially. We'll simulate that.
+//        val pendingMessage = message.copy(status = MessageStatus.SENDING)
+//
+//        // Step 1: Add the pending message to our in-memory list
+//        _messages.update { currentMessages ->
+//            val existing = currentMessages.indexOfFirst { it.id == message.id }
+//            if (existing != -1) {
+//                currentMessages.toMutableList().apply { set(existing, pendingMessage) }
+//            } else {
+//                currentMessages + pendingMessage
+//            }
+//        }
+//
+//        // Simulate network delay for the Firestore write
+//        delay(10)
+//
+//        // Step 2: Simulate a successful network update to the SENT status
+//        _messages.update { currentMessages ->
+//            currentMessages.map { msg ->
+//                if (msg.id == message.id) {
+//                    msg.copy(status = MessageStatus.SENT)
+//                } else {
+//                    msg
+//                }
+//            }
+//        }
+//
+//        // Return a success result to match the real repository
+//        return Result.success(Unit)
+//    }
+
     override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
         // Your real repo sets the status to SENDING initially. We'll simulate that.
         val pendingMessage = message.copy(status = MessageStatus.SENDING)
 
-        // Step 1: Add the pending message to our in-memory list
+        // Step 1: Add the pending message to our in-memory list and emit it.
+        // This will be the first state your test awaits.
         _messages.update { currentMessages ->
-            val existing = currentMessages.indexOfFirst { it.id == message.id }
-            if (existing != -1) {
-                currentMessages.toMutableList().apply { set(existing, pendingMessage) }
-            } else {
-                currentMessages + pendingMessage
-            }
+            currentMessages + pendingMessage
         }
 
         // Simulate network delay for the Firestore write
         delay(10)
 
-        // Step 2: Simulate a successful network update to the SENT status
+        // Step 2: Simulate a successful network update to the SENT status.
+        // We'll remove the old message and add the new one to trigger a new state emission.
+        val sentMessage = message.copy(status = MessageStatus.SENT)
         _messages.update { currentMessages ->
-            currentMessages.map { msg ->
-                if (msg.id == message.id) {
-                    msg.copy(status = MessageStatus.SENT)
-                } else {
-                    msg
-                }
-            }
+            val listWithoutPending = currentMessages.filter { it.id != pendingMessage.id }
+            listWithoutPending + sentMessage
         }
 
         // Return a success result to match the real repository
