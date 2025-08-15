@@ -28,8 +28,9 @@ interface ChatRoomRepository{
     suspend fun createGroupChatRoom(roomTitle: String, initialMembers: List<String>, createdBy: String): Result<String>
     suspend fun addMemberToGroup(roomId: String, userId: String, addedBy: String): Result<Unit>
     suspend fun removeMemberFromGroup(roomId: String, userId: String): Result<Unit>
-
+    suspend fun leaveGroup(roomId: String, userId: String): Result<Unit>
     suspend fun getChatRoomDetails(roomId: String): ChatRoom?
+    suspend fun getMemberRole(roomId: String, userId: String): String?
 
 
 }
@@ -240,15 +241,163 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         userId: String,
         addedBy: String
     ): Result<Unit> {
-        TODO("Not yet implemented")
+        return try {
+            // Check if the user trying to add is an admin (a basic check)
+            val adderRole = getMemberRole(roomId, addedBy)
+            if (adderRole != "admin") {
+                return Result.failure(Exception("Only admins can add members."))
+            }
+
+            db.runTransaction { transaction ->
+                val memberRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .document(userId)
+
+                val userRoomRef = db.collection(USER_CHATROOMS_COLLECTION)
+                    .document(userId)
+                    .collection(CHATROOMS_SUB_COLLECTION)
+                    .document(roomId)
+
+                // Add the new member to the group's members sub-collection
+                val newMemberData = Member(
+                    userId = userId,
+                    role = "member",
+                    joinedAt = System.currentTimeMillis()
+                )
+                transaction.set(memberRef, newMemberData)
+
+                // Add the chatroom to the new user's chat list
+                val chatRoomData = mapOf(
+                    "title" to "", // Will be filled in by the listenToChatRooms logic
+                    "lastMessage" to "You were added to the group.",
+                    "lastTimestamp" to System.currentTimeMillis(),
+                    "lastReadTimestamp" to 0,
+                    "isDeleted" to false,
+                    "muted" to false,
+                    "type" to "group"
+                )
+                transaction.set(userRoomRef, chatRoomData)
+                null // Indicate success
+            }.await()
+            Log.d(TAG, "User $userId successfully added to room $roomId by $addedBy")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding member to group", e)
+            Result.failure(e)
+        }
     }
 
     override suspend fun removeMemberFromGroup(
         roomId: String,
         userId: String
     ): Result<Unit> {
-        TODO("Not yet implemented")
+        return try {
+            // Check if the member being removed is an admin
+            val removedRole = getMemberRole(roomId, userId)
+            if (removedRole == "admin") {
+                // A more robust check should verify if they are the only admin
+                return Result.failure(Exception("Cannot remove an admin. Transfer ownership first."))
+            }
+
+            db.runTransaction { transaction ->
+                // Remove the member from the group's members sub-collection
+                val memberRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .document(userId)
+                transaction.delete(memberRef)
+
+                // Soft-delete the room from the user's chat list
+                val userRoomRef = db.collection(USER_CHATROOMS_COLLECTION)
+                    .document(userId)
+                    .collection(CHATROOMS_SUB_COLLECTION)
+                    .document(roomId)
+                transaction.update(userRoomRef, "isDeleted", true)
+
+                // You might also want to log a system message in the chat
+                // db.collection(MESSAGES_COLLECTION).add(...)
+                null
+            }.await()
+            Log.d(TAG, "User $userId successfully removed from room $roomId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error removing member from group", e)
+            Result.failure(e)
+        }
     }
+
+    override suspend fun leaveGroup(roomId: String, userId: String): Result<Unit> {
+        return try {
+            // Check the user's role
+            val userRole = getMemberRole(roomId, userId)
+            if (userRole == "admin") {
+                return Result.failure(Exception("Admins must transfer ownership before leaving."))
+            }
+            db.runTransaction { transaction ->
+                // Remove the member from the group's members sub-collection
+                val memberRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .document(userId)
+                transaction.delete(memberRef)
+
+                // Soft-delete the room from the user's chat list
+                val userRoomRef = db.collection(USER_CHATROOMS_COLLECTION)
+                    .document(userId)
+                    .collection(CHATROOMS_SUB_COLLECTION)
+                    .document(roomId)
+                transaction.update(userRoomRef, "isDeleted", true)
+                null
+            }.await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error leaving group", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun transferOwnership(
+        roomId: String,
+        currentAdminId: String,
+        newAdminId: String
+    ): Result<Unit> {
+        return try {
+            // Check if the current user is an admin
+            val role = getMemberRole(roomId, currentAdminId)
+            if (role != "admin") {
+                return Result.failure(Exception("You must be an admin to transfer ownership."))
+            }
+
+            db.runTransaction { transaction ->
+                val currentAdminRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .document(currentAdminId)
+
+                val newAdminRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .document(newAdminId)
+
+                // Update the current admin's role to 'member'
+                transaction.update(currentAdminRef, "role", "member")
+
+                // Update the new admin's role to 'admin'
+                transaction.update(newAdminRef, "role", "admin")
+
+                // Optionally, add a system message to the chat
+                // ...
+                null // Indicate success
+            }.await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error transferring ownership", e)
+            Result.failure(e)
+        }
+    }
+
 
     override suspend fun getChatRoomDetails(roomId: String): ChatRoom? {
         return try {
@@ -256,6 +405,21 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             document.toObject(ChatRoom::class.java)
         } catch (e: Exception) {
             Log.e(TAG, "Error getting chat room details for room $roomId", e)
+            null
+        }
+    }
+
+    override suspend fun getMemberRole(roomId: String, userId: String): String? {
+        return try {
+            val memberDoc = db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection("members")
+                .document(userId)
+                .get()
+                .await()
+            memberDoc.getString("role")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting member role for user $userId in room $roomId", e)
             null
         }
     }

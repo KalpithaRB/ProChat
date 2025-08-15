@@ -96,8 +96,8 @@ class MainActivity : ComponentActivity() {
                         val context = LocalContext.current
                         val application = context.applicationContext as Application
                         // Display the chat screen for the selected room
-                        val chatRepository: ChatRepository = RealChatRepository(firestore)
                         val chatRoomRepository: ChatRoomRepository = RealChatRoomRepository(firestore)
+                        val chatRepository: ChatRepository = RealChatRepository(firestore, chatRoomRepository )
 
                         val chatViewModel: ChatViewModel = viewModel(
                             factory = ChatViewModelFactory(

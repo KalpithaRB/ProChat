@@ -9,6 +9,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
+import com.kalpi.prochat.data.repository.ChatRoomRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -35,7 +36,9 @@ interface ChatRepository{
     suspend fun markMessageAsRead(chatRoomId: String, messageId: String)
 
 }
-class RealChatRepository(private val db: FirebaseFirestore) : ChatRepository {
+class RealChatRepository(
+    private val db: FirebaseFirestore,
+    private val chatRoomRepository: ChatRoomRepository) : ChatRepository {
 
     companion object {
         const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
@@ -46,56 +49,54 @@ class RealChatRepository(private val db: FirebaseFirestore) : ChatRepository {
 
 
     override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
-        val messageDocRef = db.collection(CHATROOMS_COLLECTION)
-            .document(roomId)
-            .collection(MESSAGES_COLLECTION)
-            .document(message.id)
+        // Step 1: Perform the membership check before the transaction
+        val memberExists = chatRoomRepository.getMemberRole(roomId, message.senderId) != null
+        if (!memberExists) {
+            Log.e(TAG, "User ${message.senderId} is not a member of room $roomId and cannot send a message.")
+            return Result.failure(Exception("You are not a member of this chatroom."))
+        }
 
-        // Initially save the message with the PENDING status.
-        // This allows the message to appear in the UI while it's being sent.
-        val pendingMessage = message.copy(status = MessageStatus.SENDING)
+        // Step 2: Get all members' IDs to update their user_chat_rooms collections
+        val memberIds = try {
+            db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection("members")
+                .get()
+                .await() // This await() is now outside the transaction
+                .documents.map { it.id }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch member IDs for room $roomId", e)
+            return Result.failure(e)
+        }
 
+        // Step 3: Now, use a Firestore Transaction to ensure all writes are atomic
         return try {
-            // Step 1: Save the message to the chatroom's message subcollection
-            messageDocRef.set(pendingMessage).await()
+            val chatroomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
+            val messageDocRef = chatroomDocRef.collection(MESSAGES_COLLECTION).document(message.id)
 
-            // Step 2 & 3: Update the chatroom documents for EACH participant
-            val chatRoomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
-            val chatRoomDocument = chatRoomDocRef.get().await()
-            val participants = chatRoomDocument.get("participants") as? List<String> ?: emptyList()
-            val userChatroomsCollection = db.collection("user_chat_rooms")
+            db.runTransaction { transaction ->
+                // Save the message
+                val pendingMessage = message.copy(status = MessageStatus.SENDING)
+                transaction.set(messageDocRef, pendingMessage)
 
-            for (participantId in participants) {
-                val updates = mutableMapOf<String, Any>()
-                updates["lastMessage"] = message.text ?: ""
-                updates["lastTimestamp"] = message.clientTimestamp
+                // Update the main chatroom document with the latest message and timestamp
+                transaction.update(chatroomDocRef, "lastMessage", message.text, "lastTimestamp", message.clientTimestamp)
 
-                if (participantId == message.senderId) {
-                    updates["lastReadTimestamp"] = message.clientTimestamp
+                // Update the user_chat_room for all members using the list we fetched earlier
+                for (userId in memberIds) {
+                    val userChatRoomRef = db.collection("user_chat_rooms").document(userId).collection("rooms").document(roomId)
+                    transaction.update(userChatRoomRef, "lastTimestamp", message.clientTimestamp, "lastMessage", message.text)
                 }
 
-                userChatroomsCollection.document(participantId)
-                    .collection("rooms")
-                    .document(roomId)
-                    .update(updates)
-                    .await()
-            }
+                null // Success
+            }.await()
 
-            // Step 4: If all writes were successful, update the status to SENT
-            messageDocRef.update("status", MessageStatus.SENT.name).await()
-            Log.d(TAG, "Message sent and chatroom documents updated for all participants in room: $roomId")
+            // Update the message status to SENT after the transaction is complete
+            updateMessageStatus(roomId, message.id, MessageStatus.SENT)
             Result.success(Unit)
-
         } catch (e: Exception) {
             Log.e(TAG, "Error sending message or updating chatroom documents", e)
-            // If anything fails, update the message status to FAILED
-            // so it can be retried later. We use a separate try-catch for this
-            // final write to avoid a nested failure.
-            try {
-                messageDocRef.update("status", MessageStatus.FAILED.name).await()
-            } catch (updateError: Exception) {
-                Log.e(TAG, "Failed to update message status to FAILED", updateError)
-            }
+            updateMessageStatus(roomId, message.id, MessageStatus.FAILED)
             Result.failure(e)
         }
     }
