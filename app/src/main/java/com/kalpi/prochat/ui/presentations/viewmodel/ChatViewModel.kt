@@ -11,6 +11,7 @@ import android.webkit.MimeTypeMap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.ChatItem
+import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
@@ -88,12 +89,26 @@ class ChatViewModel (
         }
     }
 
+    private val _chatRoom = MutableStateFlow<ChatRoom?>(null)
+    val chatRoom: StateFlow<ChatRoom?> = _chatRoom
+    private fun loadChatRoomDetails() {
+        viewModelScope.launch {
+            try {
+                val room = chatRoomRepository.getChatRoomDetails(currentRoomId)
+                _chatRoom.value = room
+            } catch (e: Exception) {
+                // Handle error if chat room details cannot be fetched
+                Log.e(TAG, "Error fetching chat room details", e)
+            }
+        }
+    }
+
     //private val networkStatusObserver = RealNetworkStatusObserver(application)
 
 
     //private val _uiState = MutableStateFlow<ChatUiState>(ChatUiState.Loading)
 
-    // NEW: Add a new MutableStateFlow to hold temporary messages (like sending images/files)
+    //  a new MutableStateFlow to hold temporary messages (like sending images/files)
     private val _tempMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     /**
      * Publicly exposed [StateFlow] of the [ChatUiState].
@@ -136,6 +151,7 @@ class ChatViewModel (
                 }
             }
         }
+        loadChatRoomDetails()
     }
 
 

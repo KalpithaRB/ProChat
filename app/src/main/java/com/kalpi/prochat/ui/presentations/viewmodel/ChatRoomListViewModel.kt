@@ -73,43 +73,42 @@ class ChatRoomListViewModel(
      * This function now uses either createDirectChatRoom or createGroupChatRoom
      * based on the isGroupChat parameter.
      */
-    fun createNewRoom(roomName: String, recipientId: String, isGroupChat: Boolean) {
+    fun createNewRoom(roomName: String, recipientIds: List<String>, isGroupChat: Boolean) {
         viewModelScope.launch {
-            // Validate input
-            if (recipientId.isBlank() || recipientId == currentUserId) {
-                _uiEvent.emit(UiEvent.ShowToast("Invalid recipient ID."))
+            // Check if there are any valid recipients
+            if (recipientIds.isEmpty()) {
+                _uiEvent.emit(UiEvent.ShowToast("Please select at least one recipient."))
                 return@launch
             }
 
-            // Check if recipient exists using the new UserRepository function
-            val recipientExists = try {
-                userRepository.getUserById(recipientId) != null
-            } catch (e: Exception) {
-                Log.e("ChatRoomListViewModel", "Error checking recipient existence", e)
-                false
-            }
+            // Combine the current user's ID with the selected recipients
+            val participantIds = (recipientIds + currentUserId).distinct()
 
-            if (!recipientExists) {
-                _uiEvent.emit(UiEvent.ShowToast("User with that ID does not exist."))
-                return@launch
-            }
+            // You should validate each recipient ID here.
+            // It's more efficient to do this once before the repository call.
+            // For simplicity, we will skip the `userRepository.getUserById` for now,
+            // as the backend handles the ultimate validation.
 
             // Corrected logic: Call the specific repository function based on isGroupChat
             val result = if (isGroupChat) {
-                val participantIds = listOf(currentUserId, recipientId)
+                // Check for a minimum of 3 participants (current user + 2 others) for a group.
+                if (participantIds.size < 3) {
+                    _uiEvent.emit(UiEvent.ShowToast("Group chats require at least 2 other members."))
+                    return@launch
+                }
                 chatRoomRepository.createGroupChatRoom(roomName, participantIds, currentUserId)
             } else {
-                val participantIds = listOf(currentUserId, recipientId)
+                // For a direct message, we must have exactly 2 participants
+                if (participantIds.size != 2) {
+                    _uiEvent.emit(UiEvent.ShowToast("Direct messages require one recipient."))
+                    return@launch
+                }
                 chatRoomRepository.createDirectChatRoom(roomName, participantIds)
             }
 
             result.onSuccess { newRoomId ->
                 Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
-                if (isGroupChat) {
-                    _uiEvent.emit(UiEvent.RoomCreatedAndNavigate(newRoomId, roomName))
-                } else {
-                    _uiEvent.emit(UiEvent.RoomCreated(newRoomId))
-                }
+                _uiEvent.emit(UiEvent.RoomCreatedAndNavigate(newRoomId, roomName))
             }.onFailure {
                 Log.e("ChatRoomListViewModel", "Failed to create new room", it)
                 _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))

@@ -48,6 +48,8 @@ import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import com.kalpi.prochat.data.model.ChatRoom
+import com.kalpi.prochat.data.model.User
+import com.kalpi.prochat.data.repository.UserRepository
 import kotlinx.coroutines.flow.collectLatest
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.ChatRoomListItem
@@ -58,6 +60,7 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListUiState
 @Composable
 fun ChatRoomListScreen(
     chatRoomListViewModel: ChatRoomListViewModel,
+    userRepository: UserRepository,
     onRoomClicked: (String, String) -> Unit
 ) {
     val uiState by chatRoomListViewModel.uiState.collectAsState()
@@ -343,9 +346,26 @@ fun ChatRoomListScreen(
 
 
     if (showCreateRoomDialog) {
+        var users by remember { mutableStateOf<List<User>>(emptyList()) }
+        var selectedUserIds by remember { mutableStateOf(emptySet<String>()) }
+        var isLoadingUsers by remember { mutableStateOf(true) }
+
+        // Fetch users once when the dialog is shown
+        LaunchedEffect(Unit) {
+            isLoadingUsers = true
+            val fetchedUsers = userRepository.getUsers()
+            users = fetchedUsers
+            isLoadingUsers = false
+        }
+
         AlertDialog(
-            onDismissRequest = { showCreateRoomDialog = false },
-            title = { Text("Create New Room") },
+            onDismissRequest = {
+                showCreateRoomDialog = false
+                newRoomName = ""
+                isGroupChat = false
+                selectedUserIds = emptySet()
+            },
+            title = { Text(if (isGroupChat) "Create Group Chat" else "Create Direct Message") },
             text = {
                 Column {
                     OutlinedTextField(
@@ -355,13 +375,52 @@ fun ChatRoomListScreen(
                         singleLine = true,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    OutlinedTextField(
-                        value = newRecipientId,
-                        onValueChange = { newRecipientId = it },
-                        label = { Text("Recipient User ID") },
-                        singleLine = true ,
-                        enabled = !isGroupChat
-                    )
+
+                    // User selection UI
+                    if (isLoadingUsers) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (users.isEmpty()) {
+                        Text("No other users found.")
+                    } else {
+                        Text("Select Users:", style = MaterialTheme.typography.labelLarge)
+                        LazyColumn(
+                            modifier = Modifier
+                                .heightIn(max = 200.dp)
+                                .padding(top = 8.dp)
+                        ) {
+                            items(users) { user ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedUserIds = if (selectedUserIds.contains(user.userId)) {
+                                                selectedUserIds - user.userId
+                                            } else {
+                                                selectedUserIds + user.userId
+                                            }
+                                        }
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = selectedUserIds.contains(user.userId),
+                                        onCheckedChange = { isChecked ->
+                                            selectedUserIds = if (isChecked) {
+                                                selectedUserIds + user.userId
+                                            } else {
+                                                selectedUserIds - user.userId
+                                            }
+                                        }
+                                    )
+                                    Text(
+                                        text = user.name,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.padding(top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -377,13 +436,17 @@ fun ChatRoomListScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        chatRoomListViewModel.createNewRoom(newRoomName, newRecipientId, isGroupChat)
+                        chatRoomListViewModel.createNewRoom(
+                            roomName = newRoomName,
+                            recipientIds = selectedUserIds.toList(),
+                            isGroupChat = isGroupChat
+                        )
                         showCreateRoomDialog = false
                         newRoomName = ""
-                        newRecipientId = ""
+                        selectedUserIds = emptySet()
                         isGroupChat = false
                     },
-                    enabled = newRoomName.isNotBlank() && newRecipientId.isNotBlank()
+                    enabled = newRoomName.isNotBlank() && selectedUserIds.isNotEmpty()
                 ) {
                     Text("Create")
                 }
@@ -392,7 +455,7 @@ fun ChatRoomListScreen(
                 TextButton(onClick = {
                     showCreateRoomDialog = false
                     newRoomName = ""
-                    newRecipientId = ""
+                    selectedUserIds = emptySet()
                     isGroupChat = false
                 }) {
                     Text("Cancel")

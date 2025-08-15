@@ -209,13 +209,17 @@ fun ChatScreen(
                     DropdownMenu(
                         expanded = expanded, onDismissRequest = { expanded = false }
                     ) {
-                        if (currentChatRoom?.type == "group") {
+                        // FIX: Use a local variable to capture the value
+                        val room = currentChatRoom
+
+                        // Now, perform the null check on the local variable
+                        if (room?.type == "group") {
                             DropdownMenuItem(
                                 text = { Text("Manage Members") },
                                 onClick = {
                                     expanded = false
-                                    // Navigate to the member management screen
-                                    onNavigateToMemberManagement(currentChatRoom.roomId, currentUserId)
+                                    // Use the local 'room' variable here
+                                    onNavigateToMemberManagement(room.roomId, currentUserId)
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Outlined.People, contentDescription = "Manage Members")

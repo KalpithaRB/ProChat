@@ -52,7 +52,8 @@ fun AppNavGraph(
                 chatRoomListViewModel = chatRoomListViewModel,
                 onRoomClicked = { roomId, roomName ->
                     navController.navigate("chatScreen/$roomId/$roomName")
-                }
+                },
+                userRepository = userRepository
             )
         }
 
@@ -61,10 +62,12 @@ fun AppNavGraph(
             arguments = listOf(
                 navArgument("roomId") {
                     type = NavType.StringType
-                    defaultValue = initialRoomId },
+                    defaultValue = initialRoomId
+                    nullable = true },
                 navArgument("roomName") {
                     type = NavType.StringType
-                    defaultValue = "Chat Pro"}
+                    defaultValue = "Chat Pro"
+                    nullable = true }
             )
         ) { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: ""

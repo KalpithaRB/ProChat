@@ -211,6 +211,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                     transaction.set(memberDocRef, memberData)
                 }
 
+
                 // Update user's list of rooms for all participants
                 for (userId in initialMembers) {
                     val userRoomData = mapOf(

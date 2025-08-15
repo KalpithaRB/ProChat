@@ -10,6 +10,7 @@ import kotlinx.coroutines.tasks.await
 interface UserRepository {
     fun searchUsers(query: String): Flow<List<User>>
     suspend fun getUserById(userId: String): User?
+    suspend fun getUsers(): List<User>
 }
 
 class RealUserRepository(private val firestore: FirebaseFirestore) : UserRepository {
@@ -26,6 +27,17 @@ class RealUserRepository(private val firestore: FirebaseFirestore) : UserReposit
             firestore.collection("users").document(userId).get().await().toObject(User::class.java)
         } catch (e: Exception) {
             null
+        }
+    }
+
+    override suspend fun getUsers(): List<User> {
+        return try {
+            firestore.collection("users")
+                .get()
+                .await()
+                .toObjects(User::class.java)
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }
