@@ -263,7 +263,7 @@ fun ChatRoomListScreen(
                                                 .fillMaxWidth()
                                                 .clickable {
                                                     // This is the click listener for the main chat item
-                                                    onRoomClicked(chatRoom.roomId, chatRoom.name)
+                                                    onRoomClicked(chatRoom.roomId, chatRoom.title)
                                                 }
                                                 .background(MaterialTheme.colorScheme.surface)
                                                 .padding(16.dp),
@@ -273,7 +273,7 @@ fun ChatRoomListScreen(
                                             Column(
                                                 modifier = Modifier.weight(1f) // This makes the Column take up all available space
                                             ) {Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
+                                                Text(chatRoom.title, style = MaterialTheme.typography.titleMedium)
                                                 if (chatRoom.muted) {
                                                     Spacer(Modifier.width(8.dp))
                                                     Icon(
@@ -284,7 +284,7 @@ fun ChatRoomListScreen(
                                                     )
                                                 }
                                             }
-                                                Text(chatRoom.name, style = MaterialTheme.typography.titleMedium)
+                                                Text(chatRoom.title, style = MaterialTheme.typography.titleMedium)
                                                 chatRoom.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                                             }
 
@@ -457,7 +457,7 @@ fun ChatRoomListScreen(
                 roomToDelete = null
             },
             title = { Text("Delete Chatroom") },
-            text = { Text("Are you sure you want to delete '${roomToDelete?.name}'? This action cannot be undone.") },
+            text = { Text("Are you sure you want to delete '${roomToDelete?.title}'? This action cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {

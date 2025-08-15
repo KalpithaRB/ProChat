@@ -28,12 +28,12 @@ fun ChatRoomListItem(
     onToggleMuteClicked: (String) -> Unit
 ) {
     // Add this log statement here
-    Log.d("ChatRoomListItem", "Rendering room '${chatRoom.name}', unreadCount: ${chatRoom.unreadCount}")
+    Log.d("ChatRoomListItem", "Rendering room '${chatRoom.title}', unreadCount: ${chatRoom.unreadCount}")
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onRoomClicked(chatRoom.roomId, chatRoom.name) },
+            .clickable { onRoomClicked(chatRoom.roomId, chatRoom.title) },
         color = MaterialTheme.colorScheme.background
     ) {
         Row(
@@ -56,7 +56,7 @@ fun ChatRoomListItem(
             ) {
                 // Room name
                 Text(
-                    text = if (chatRoom.name.isNotBlank()) chatRoom.name else "Unnamed Room",
+                    text = if (chatRoom.title.isNotBlank()) chatRoom.title else "Unnamed Room",
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1
                 )

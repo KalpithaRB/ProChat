@@ -16,6 +16,7 @@ import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
 import com.kalpi.prochat.data.model.MessageType
 import com.kalpi.prochat.data.repository.ChatRepository
+import com.kalpi.prochat.ui.chat.UserManager
 import com.kalpi.prochat.utils.getFileNameFromUri
 import com.kalpi.prochat.utils.getFileTypeFromUri
 import com.kalpi.prochat.utils.getFileSizeFromUri

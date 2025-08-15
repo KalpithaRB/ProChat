@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.kalpi.prochat.ui.presentations.screens.ChatScreen
+import com.kalpi.prochat.ui.chat.UserManager
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import androidx.lifecycle.viewmodel.compose.viewModel // Standard viewModel delegate
 import com.google.firebase.Firebase
@@ -54,7 +55,7 @@ class MainActivity : ComponentActivity() {
                     val firestore = Firebase.firestore
 
                     // Get the unique user ID, which is needed for all ViewModels
-                    val uniqueUserId = ChatViewModel.getOrCreateUserId(LocalContext.current)
+                    val uniqueUserId = UserManager.getOrCreateUserId(LocalContext.current)
 
                     val initialRoomId: String? = intent?.data?.lastPathSegment
                     val initialRoomName: String? = if (initialRoomId != null) "Chat Pro" else null

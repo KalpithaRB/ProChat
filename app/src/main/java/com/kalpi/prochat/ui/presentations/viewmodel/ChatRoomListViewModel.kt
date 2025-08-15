@@ -130,9 +130,9 @@ class ChatRoomListViewModel(
 
             // Determine the toast message based on the new state
             val message = if (newIsMutedState) {
-                "${chatRoomToUpdate.name} is muted."
+                "${chatRoomToUpdate.title} is muted."
             } else {
-                "${chatRoomToUpdate.name} is unmuted."
+                "${chatRoomToUpdate.title} is unmuted."
             }
 
             // Emit a UiEvent to show the toast

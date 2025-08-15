@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
+import com.kalpi.prochat.ui.chat.UserManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -38,7 +39,7 @@ class LifecycleFirebaseMessagingService : FirebaseMessagingService() {
     private fun sendRegistrationToServer(token: String?) {
         if (token == null) return
 
-        val uniqueUserId = ChatViewModel.getOrCreateUserId(this)
+        val uniqueUserId = UserManager.getOrCreateUserId(this)
 
         // This part is crucial, as you now call your server's API instead of Firestore.
         serviceScope.launch{
