@@ -215,7 +215,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                 // Update user's list of rooms for all participants
                 for (userId in initialMembers) {
                     val userRoomData = mapOf(
-                        "roomId" to newRoomId,
+//                        "roomId" to newRoomId,
                         "type" to "group",
                         "title" to roomTitle,
                         "lastMessage" to "Group created.",

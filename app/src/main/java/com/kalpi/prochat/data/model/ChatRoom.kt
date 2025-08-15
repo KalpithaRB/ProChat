@@ -5,7 +5,7 @@ import com.google.firebase.firestore.DocumentId
 
 @Keep // Recommended for use with Firebase Firestore
 data class ChatRoom(
-    @DocumentId
+    @DocumentId val documentId: String = "",
     val roomId: String = "",
     val type: String = "dm",  // New field to distinguish between 'group' and 'dm'
     val title: String = "",   // New field, for the group's name
