@@ -1,5 +1,6 @@
 package com.kalpi.prochat.data.repository
 import com.kalpi.prochat.data.model.ChatRoom
+import com.kalpi.prochat.data.model.Member
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,7 +79,33 @@ class FakeChatRoomRepository : ChatRoomRepository {
         TODO("Not yet implemented")
     }
 
+    override suspend fun leaveGroup(
+        roomId: String,
+        userId: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
     override suspend fun getChatRoomDetails(roomId: String): ChatRoom? {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getMemberRole(
+        roomId: String,
+        userId: String
+    ): String? {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun transferOwnership(
+        roomId: String,
+        currentAdminId: String,
+        newAdminId: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getMembers(roomId: String): List<Member> {
         TODO("Not yet implemented")
     }
 

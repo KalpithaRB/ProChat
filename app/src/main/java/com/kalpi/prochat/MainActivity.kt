@@ -42,8 +42,11 @@ import androidx.annotation.RequiresApi
 import androidx.compose.runtime.DisposableEffect
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.kalpi.prochat.data.repository.RealChatRepository
 import com.kalpi.prochat.data.repository.RealChatRoomRepository
+import com.kalpi.prochat.navigation.AppNavGraph
 
 class MainActivity : ComponentActivity() {
     @RequiresApi(Build.VERSION_CODES.S)
@@ -59,68 +62,40 @@ class MainActivity : ComponentActivity() {
                     // Get the unique user ID, which is needed for all ViewModels
                     val uniqueUserId = UserManager.getOrCreateUserId(LocalContext.current)
 
+                    // Get the initial room ID from a deep link, if it exists
                     val initialRoomId: String? = intent?.data?.lastPathSegment
-                    val initialRoomName: String? = if (initialRoomId != null) "Chat Pro" else null
                     Log.d("MainActivity", "Initial room from deep link: $initialRoomId")
 
-                    // Navigation State: Holds the ID of the chat room we are currently viewing.
-                    // If it's null, we display the ChatRoomListScreen.
-                    var currentRoomId: String? by remember { mutableStateOf(initialRoomId) }
+                    // Repositories are now instantiated once and passed to the NavGraph
+                    val chatRoomRepository = RealChatRoomRepository(firestore)
+                    val chatRepository = RealChatRepository(firestore, chatRoomRepository)
+                    val userRepository = RealUserRepository(firestore)
 
-                    // room name for the top bar.
-                    var currentRoomName: String? by remember { mutableStateOf(initialRoomName) }
+                    // Navigation setup
+                    val navController = rememberNavController()
 
-                    DisposableEffect(currentRoomId) {
-                        AppState.currentChatRoomId = currentRoomId
+                    // Handle AppState logic based on the current navigation destination
+                    DisposableEffect(navController) {
+                        val listener = NavController.OnDestinationChangedListener { _, destination, arguments ->
+                            val currentRoomId = arguments?.getString("roomId")
+                            AppState.currentChatRoomId = currentRoomId
+                            Log.d("MainActivity", "Current chat room ID: ${AppState.currentChatRoomId}")
+                        }
+                        navController.addOnDestinationChangedListener(listener)
                         onDispose {
-                            AppState.currentChatRoomId = null
+                            navController.removeOnDestinationChangedListener(listener)
                         }
                     }
 
-                    if (currentRoomId == null) {
-                        // Display the list of chat rooms
-                        val chatRoomRepository: ChatRoomRepository =
-                            RealChatRoomRepository(firestore)
-                        val userRepository: UserRepository = RealUserRepository(firestore)
-                        val chatRoomListViewModel: ChatRoomListViewModel = viewModel(
-                            factory = ChatRoomListViewModelFactory(chatRoomRepository,userRepository, uniqueUserId)
-                        )
-                        ChatRoomListScreen(
-                            chatRoomListViewModel = chatRoomListViewModel,
-                            onRoomClicked = { roomId, roomName ->
-                                currentRoomId = roomId
-                                currentRoomName = roomName
-                            }
-                        )
-                    } else {
-                        val context = LocalContext.current
-                        val application = context.applicationContext as Application
-                        // Display the chat screen for the selected room
-                        val chatRoomRepository: ChatRoomRepository = RealChatRoomRepository(firestore)
-                        val chatRepository: ChatRepository = RealChatRepository(firestore, chatRoomRepository )
-
-                        val chatViewModel: ChatViewModel = viewModel(
-                            factory = ChatViewModelFactory(
-                                application,
-                                chatRepository,
-                                chatRoomRepository,
-                                currentRoomId!!,
-                                uniqueUserId
-                            )
-                        )
-                        ChatScreen(
-                            chatViewModel = chatViewModel,
-                            roomName = currentRoomName ?: "Chat Pro",
-                            onBackClicked = {
-                                currentRoomId = null
-                                currentRoomName = null
-                            },
-                            onDeleteSuccess = {
-                                currentRoomId = null
-                                currentRoomName = null
-                            }
-                        )
-                    }
+                    // Call the centralized navigation graph
+                    AppNavGraph(
+                        navController = navController,
+                        userId = uniqueUserId,
+                        chatRoomRepository = chatRoomRepository,
+                        chatRepository = chatRepository,
+                        userRepository = userRepository,
+                        initialRoomId = initialRoomId // Pass the deep-link ID to the graph
+                    )
                 }
             }
 

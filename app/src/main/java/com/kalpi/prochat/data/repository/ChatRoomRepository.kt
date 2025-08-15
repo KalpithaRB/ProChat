@@ -31,6 +31,9 @@ interface ChatRoomRepository{
     suspend fun leaveGroup(roomId: String, userId: String): Result<Unit>
     suspend fun getChatRoomDetails(roomId: String): ChatRoom?
     suspend fun getMemberRole(roomId: String, userId: String): String?
+    suspend fun transferOwnership(roomId: String, currentAdminId: String, newAdminId: String): Result<Unit>
+
+    suspend fun getMembers(roomId: String): List<Member>
 
 
 }
@@ -357,7 +360,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         }
     }
 
-    suspend fun transferOwnership(
+    override suspend fun transferOwnership(
         roomId: String,
         currentAdminId: String,
         newAdminId: String
@@ -421,6 +424,20 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         } catch (e: Exception) {
             Log.e(TAG, "Error getting member role for user $userId in room $roomId", e)
             null
+        }
+    }
+
+    override suspend fun getMembers(roomId: String): List<Member> {
+        return try {
+            val snapshot = db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection("members")
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { it.toObject(Member::class.java) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting members for room $roomId", e)
+            emptyList()
         }
     }
 

@@ -59,6 +59,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -96,8 +97,13 @@ fun ChatScreen(
     chatViewModel: ChatViewModel, // Uses the default ViewModel factory
     onBackClicked: () -> Unit,
     onDeleteSuccess: () -> Unit,
+    onNavigateToMemberManagement: (String, String) -> Unit,
     roomName: String
 ) {
+
+    val currentChatRoom by chatViewModel.chatRoom.collectAsState()
+    val currentUserId = chatViewModel.currentUserId // Assuming this is public in your ViewModel
+
     val uiState by chatViewModel.uiState.collectAsState()
     val listState = rememberLazyListState() // For auto-scrolling
     var textState by remember { mutableStateOf(TextFieldValue("")) }
@@ -187,6 +193,7 @@ fun ChatScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+
                     var expanded by remember { mutableStateOf(false) }
 
                     // Three-dot menu icon
@@ -202,6 +209,19 @@ fun ChatScreen(
                     DropdownMenu(
                         expanded = expanded, onDismissRequest = { expanded = false }
                     ) {
+                        if (currentChatRoom?.type == "group") {
+                            DropdownMenuItem(
+                                text = { Text("Manage Members") },
+                                onClick = {
+                                    expanded = false
+                                    // Navigate to the member management screen
+                                    onNavigateToMemberManagement(currentChatRoom.roomId, currentUserId)
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.People, contentDescription = "Manage Members")
+                                }
+                            )
+                        }
                         // "Export Chat" menu item
                         DropdownMenuItem(
                             text = { Text("Export Chat") },
