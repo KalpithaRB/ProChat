@@ -64,6 +64,7 @@ fun ChatRoomListScreen(
     var showCreateRoomDialog by remember { mutableStateOf(false) }
     var showJoinRoomDialog by remember { mutableStateOf(false) }
     var isFabMenuExpanded by remember { mutableStateOf(false) }
+    var isGroupChat by remember { mutableStateOf(false) }
     var newRoomName by remember { mutableStateOf("") }
     var newRecipientId by remember { mutableStateOf("") }
     var joinRoomId by remember { mutableStateOf("") }
@@ -78,13 +79,16 @@ fun ChatRoomListScreen(
 
 
 
-    // NEW LaunchedEffect to listen for one-time events from the ViewModel
+    // LaunchedEffect to listen for one-time events from the ViewModel
     LaunchedEffect(key1 = Unit) {
         chatRoomListViewModel.uiEvent.collectLatest { event ->
             when (event) {
                 is ChatRoomListViewModel.UiEvent.RoomCreated -> {
                     sharedRoomId = event.roomId
                     showShareRoomIdDialog = true
+                }
+                is ChatRoomListViewModel.UiEvent.RoomCreatedAndNavigate -> {
+                    onRoomClicked(event.roomId, event.roomName)
                 }
                 is ChatRoomListViewModel.UiEvent.RoomJoined -> {
                     // TODO: We need to get the room name here to navigate correctly
@@ -355,17 +359,29 @@ fun ChatRoomListScreen(
                         value = newRecipientId,
                         onValueChange = { newRecipientId = it },
                         label = { Text("Recipient User ID") },
-                        singleLine = true
+                        singleLine = true ,
+                        enabled = !isGroupChat
                     )
+                    Row(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isGroupChat,
+                            onCheckedChange = { isGroupChat = it }
+                        )
+                        Text("Create as Group Chat")
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        chatRoomListViewModel.createNewRoom(newRoomName, newRecipientId)
+                        chatRoomListViewModel.createNewRoom(newRoomName, newRecipientId, isGroupChat)
                         showCreateRoomDialog = false
                         newRoomName = ""
                         newRecipientId = ""
+                        isGroupChat = false
                     },
                     enabled = newRoomName.isNotBlank() && newRecipientId.isNotBlank()
                 ) {
@@ -377,6 +393,7 @@ fun ChatRoomListScreen(
                     showCreateRoomDialog = false
                     newRoomName = ""
                     newRecipientId = ""
+                    isGroupChat = false
                 }) {
                     Text("Cancel")
                 }

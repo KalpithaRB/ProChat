@@ -34,6 +34,8 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModelFactory
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
+import com.kalpi.prochat.data.repository.UserRepository
+import com.kalpi.prochat.data.repository.RealUserRepository
 import com.kalpi.prochat.ui.theme.ProChatTheme
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -79,8 +81,9 @@ class MainActivity : ComponentActivity() {
                         // Display the list of chat rooms
                         val chatRoomRepository: ChatRoomRepository =
                             RealChatRoomRepository(firestore)
+                        val userRepository: UserRepository = RealUserRepository(firestore)
                         val chatRoomListViewModel: ChatRoomListViewModel = viewModel(
-                            factory = ChatRoomListViewModelFactory(chatRoomRepository, uniqueUserId)
+                            factory = ChatRoomListViewModelFactory(chatRoomRepository,userRepository, uniqueUserId)
                         )
                         ChatRoomListScreen(
                             chatRoomListViewModel = chatRoomListViewModel,

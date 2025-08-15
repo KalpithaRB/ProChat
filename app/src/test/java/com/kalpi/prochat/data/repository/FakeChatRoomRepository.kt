@@ -34,7 +34,7 @@ class FakeChatRoomRepository : ChatRoomRepository {
         return 1
     }
 
-    override suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
+    suspend fun createChatRoom(roomName: String, participantIds: List<String>): Result<String> {
         return createChatRoomResult
     }
 
@@ -55,7 +55,41 @@ class FakeChatRoomRepository : ChatRoomRepository {
         return softDeleteChatroomResult
     }
 
+    override suspend fun createGroupChatRoom(
+        roomTitle: String,
+        initialMembers: List<String>,
+        createdBy: String
+    ): Result<String> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun addMemberToGroup(
+        roomId: String,
+        userId: String,
+        addedBy: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun removeMemberFromGroup(
+        roomId: String,
+        userId: String
+    ): Result<Unit> {
+        TODO("Not yet implemented")
+    }
+
+    override suspend fun getChatRoomDetails(roomId: String): ChatRoom? {
+        TODO("Not yet implemented")
+    }
+
     override suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit> {
         return markRoomAsReadResult
+    }
+
+    override suspend fun createDirectChatRoom(
+        roomName: String,
+        participantIds: List<String>
+    ): Result<String> {
+        TODO("Not yet implemented")
     }
 }

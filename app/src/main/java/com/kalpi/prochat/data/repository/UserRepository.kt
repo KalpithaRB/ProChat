@@ -9,6 +9,7 @@ import kotlinx.coroutines.tasks.await
 // UserRepository.kt
 interface UserRepository {
     fun searchUsers(query: String): Flow<List<User>>
+    suspend fun getUserById(userId: String): User?
 }
 
 class RealUserRepository(private val firestore: FirebaseFirestore) : UserRepository {
@@ -17,6 +18,14 @@ class RealUserRepository(private val firestore: FirebaseFirestore) : UserReposit
             // Placeholder: A real implementation would query by name or user ID
             val users = firestore.collection("users").get().await().toObjects(User::class.java)
             emit(users.filter { it.name.contains(query, ignoreCase = true) || it.userId.contains(query, ignoreCase = true) })
+        }
+    }
+
+    override suspend fun getUserById(userId: String): User? {
+        return try {
+            firestore.collection("users").document(userId).get().await().toObject(User::class.java)
+        } catch (e: Exception) {
+            null
         }
     }
 }

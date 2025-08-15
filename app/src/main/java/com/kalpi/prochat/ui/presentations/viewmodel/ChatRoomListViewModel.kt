@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.data.repository.UserRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -24,6 +25,7 @@ sealed class ChatRoomListUiState {
 
 class ChatRoomListViewModel(
     private val chatRoomRepository: ChatRoomRepository,
+    private val userRepository: UserRepository,
     private val currentUserId: String
 ) : ViewModel() {
 
@@ -46,7 +48,6 @@ class ChatRoomListViewModel(
         )
 
 
-    // NEW: SharedFlow to send one-time UI events (like showing a dialog)
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
 
@@ -54,6 +55,7 @@ class ChatRoomListViewModel(
         data class RoomCreated(val roomId: String) : UiEvent()
         data class RoomJoined(val roomId: String) : UiEvent()
         data class ShowToast(val message: String) : UiEvent()
+        data class RoomCreatedAndNavigate(val roomId: String, val roomName: String) : UiEvent()
     }
 
 
@@ -67,24 +69,50 @@ class ChatRoomListViewModel(
     }
 
     /**
-     * Creates a new chat room with the given name and recipient ID.
+     * Creates a new chat room.
+     * This function now uses either createDirectChatRoom or createGroupChatRoom
+     * based on the isGroupChat parameter.
      */
-    fun createNewRoom(roomName: String, recipientId: String) {
+    fun createNewRoom(roomName: String, recipientId: String, isGroupChat: Boolean) {
         viewModelScope.launch {
-            if (recipientId.isNotBlank() && recipientId != currentUserId) {
+            // Validate input
+            if (recipientId.isBlank() || recipientId == currentUserId) {
+                _uiEvent.emit(UiEvent.ShowToast("Invalid recipient ID."))
+                return@launch
+            }
+
+            // Check if recipient exists using the new UserRepository function
+            val recipientExists = try {
+                userRepository.getUserById(recipientId) != null
+            } catch (e: Exception) {
+                Log.e("ChatRoomListViewModel", "Error checking recipient existence", e)
+                false
+            }
+
+            if (!recipientExists) {
+                _uiEvent.emit(UiEvent.ShowToast("User with that ID does not exist."))
+                return@launch
+            }
+
+            // Corrected logic: Call the specific repository function based on isGroupChat
+            val result = if (isGroupChat) {
                 val participantIds = listOf(currentUserId, recipientId)
-                chatRoomRepository.createChatRoom(roomName, participantIds)
-                    .onSuccess { newRoomId ->
-                        Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
-                        // NEW: Emit the event to the UI
-                        _uiEvent.emit(UiEvent.RoomCreated(newRoomId))
-                    }.onFailure {
-                        Log.e("ChatRoomListViewModel", "Failed to create new room", it)
-                        _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))
-                    }
+                chatRoomRepository.createGroupChatRoom(roomName, participantIds, currentUserId)
             } else {
-                Log.e("ChatRoomListViewModel", "Invalid recipient ID or self-chat attempt.")
-                _uiEvent.emit(UiEvent.ShowToast("Please enter a valid recipient ID."))
+                val participantIds = listOf(currentUserId, recipientId)
+                chatRoomRepository.createDirectChatRoom(roomName, participantIds)
+            }
+
+            result.onSuccess { newRoomId ->
+                Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
+                if (isGroupChat) {
+                    _uiEvent.emit(UiEvent.RoomCreatedAndNavigate(newRoomId, roomName))
+                } else {
+                    _uiEvent.emit(UiEvent.RoomCreated(newRoomId))
+                }
+            }.onFailure {
+                Log.e("ChatRoomListViewModel", "Failed to create new room", it)
+                _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))
             }
         }
     }
