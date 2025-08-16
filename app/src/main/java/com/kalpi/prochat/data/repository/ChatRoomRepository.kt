@@ -180,18 +180,25 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
      */
     override suspend fun createDirectChatRoom(roomName: String, participantIds: List<String>): Result<String> {
         return try {
-            // Get a reference to a new document to get its auto-generated ID.
-            // This ID will be our single source of truth for the room.
-            val newRoomRef = db.collection(CHATROOMS_COLLECTION).document()
-            val newRoomId = newRoomRef.id
+            // ✨ The fix: Create a deterministic ID from the participant IDs
+            val sortedParticipantIds = participantIds.sorted()
+            val dmChatRoomId = sortedParticipantIds.joinToString(separator = "_")
 
-            // The data for the main chatroom document. This should be the complete object.
+            val newRoomRef = db.collection(CHATROOMS_COLLECTION).document(dmChatRoomId)
+            val documentSnapshot = newRoomRef.get().await()
+
+            if (documentSnapshot.exists()) {
+                // Room already exists, return its ID
+                Log.d(TAG, "DM room already exists with ID: $dmChatRoomId")
+                return Result.success(dmChatRoomId)
+            }
+
+            // The data for the main chatroom document.
             val mainChatRoomData = mapOf(
                 "type" to "dm",
                 "title" to roomName,
                 "createdAt" to System.currentTimeMillis(),
                 "participants" to participantIds
-                // You can add other fields here if needed.
             )
             // Add this data to the main collection using the generated ID
             newRoomRef.set(mainChatRoomData).await()
@@ -202,22 +209,20 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                     "lastMessage" to "Room created.",
                     "lastTimestamp" to System.currentTimeMillis(),
                     "lastReadTimestamp" to System.currentTimeMillis()
-                    // Do NOT duplicate other fields like 'type', 'title', etc.
-                    // The main chatroom document holds the source of truth for these.
                 )
                 db.collection(USER_CHATROOMS_COLLECTION)
                     .document(userId)
                     .collection(CHATROOMS_SUB_COLLECTION)
-                    .document(newRoomId) // Use the same unique ID here
+                    .document(dmChatRoomId)
                     .set(userRoomData)
                     .await()
             }
 
-            Log.d(TAG, "Successfully created new DM room with ID: $newRoomId for participants: $participantIds")
-            Result.success(newRoomId)
+            Log.d(TAG, "Successfully created new DM room with ID: $dmChatRoomId")
+            Result.success(dmChatRoomId)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating new chat room", e)
+            Log.e(TAG, "Error creating new direct chat room", e)
             Result.failure(e)
         }
     }

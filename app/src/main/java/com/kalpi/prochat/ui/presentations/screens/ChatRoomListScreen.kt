@@ -1,6 +1,7 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -205,8 +206,8 @@ fun ChatRoomListScreen(
                                 key = { chatRoom ->
                                     // ✨ The definitive fix: Use a non-empty, unique key.
                                     // This prevents the crash if roomId is null or empty.
-                                    if (chatRoom.roomId.isNotBlank()) {
-                                        chatRoom.roomId
+                                    if (chatRoom.documentId.isNotBlank()) {
+                                        chatRoom.documentId
                                     } else {
                                         chatRoom.hashCode().toString()
                                     }
@@ -218,7 +219,7 @@ fun ChatRoomListScreen(
                                             // When the user swipes from start to end (left to right)
                                             SwipeToDismissBoxValue.StartToEnd -> {
                                                 // Call the ViewModel function to soft delete the chatroom
-                                                chatRoomListViewModel.deleteChatroom(chatRoom.roomId)
+                                                chatRoomListViewModel.deleteChatroom(chatRoom.documentId)
                                                 true // Allow the dismissal animation to complete
                                             }
                                             // When the user swipes from end to start (right to left)
@@ -279,8 +280,13 @@ fun ChatRoomListScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
-                                                    // This is the click listener for the main chat item
-                                                    onRoomClicked(chatRoom.roomId, chatRoom.title)
+                                                    // 🌟 The definitive fix for this crash
+                                                    if (chatRoom.documentId.isNotBlank()) {
+                                                        onRoomClicked(chatRoom.documentId, chatRoom.title)
+                                                    } else {
+                                                        // Log an error or show a Toast message here
+                                                        Log.e("ChatRoomListScreen", "Attempted to click on a chat room with a blank ID: ${chatRoom.title}")
+                                                    }
                                                 }
                                                 .background(MaterialTheme.colorScheme.surface)
                                                 .padding(16.dp),
@@ -325,7 +331,7 @@ fun ChatRoomListScreen(
                                                         },
                                                         onClick = {
                                                             showMenu = false
-                                                            chatRoomListViewModel.onToggleMute(chatRoom.roomId)
+                                                            chatRoomListViewModel.onToggleMute(chatRoom.documentId)
                                                         }
                                                     )
                                                     // Delete Chatroom Menu Item
@@ -554,7 +560,7 @@ fun ChatRoomListScreen(
                 TextButton(
                     onClick = {
                         // Call the new ViewModel function
-                        chatRoomListViewModel.deleteChatroom(roomToDelete!!.roomId)
+                        chatRoomListViewModel.deleteChatroom(roomToDelete!!.documentId)
                         showDeleteDialog = false
                         roomToDelete = null
                     }

@@ -33,7 +33,7 @@ fun ChatRoomListItem(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onRoomClicked(chatRoom.roomId, chatRoom.title) },
+            .clickable { onRoomClicked(chatRoom.documentId, chatRoom.title) },
         color = MaterialTheme.colorScheme.background
     ) {
         Row(
@@ -73,7 +73,7 @@ fun ChatRoomListItem(
             }
             Spacer(modifier = Modifier.width(16.dp))
             //Mute/UnMute icon
-            IconButton(onClick = { onToggleMuteClicked(chatRoom.roomId) }) {
+            IconButton(onClick = { onToggleMuteClicked(chatRoom.documentId) }) {
                 Icon(
                     // CORRECTED: Check 'chatRoom.muted' instead of 'chatRoom.isMuted'
                     imageVector = if (chatRoom.muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,

@@ -219,7 +219,7 @@ fun ChatScreen(
                                 onClick = {
                                     expanded = false
                                     // Use the local 'room' variable here
-                                    onNavigateToMemberManagement(room.roomId, currentUserId)
+                                    onNavigateToMemberManagement(room.documentId, currentUserId)
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Outlined.People, contentDescription = "Manage Members")

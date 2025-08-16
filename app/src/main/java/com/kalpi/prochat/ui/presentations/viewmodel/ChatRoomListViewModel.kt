@@ -145,7 +145,7 @@ class ChatRoomListViewModel(
         viewModelScope.launch {
             // Find the chatroom from the current UI state
             val chatRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
-            val chatRoomToUpdate = chatRooms.firstOrNull { it.roomId == roomId } ?: return@launch
+            val chatRoomToUpdate = chatRooms.firstOrNull { it.documentId == roomId } ?: return@launch
             val newIsMutedState = !chatRoomToUpdate.muted // Assuming the field is named `muted`
 
             // CORRECTED: Pass all three arguments to the repository function
