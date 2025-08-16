@@ -6,14 +6,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import android.util.Log
+import androidx.annotation.Keep
 import com.google.firebase.firestore.Query
 import com.kalpi.prochat.data.model.Member
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.runBlocking
 
 interface ChatRoomRepository{
     fun listenToChatRooms(userId: String): Flow<List<ChatRoom>>
@@ -53,49 +57,81 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
      * This function now separates the concerns: the callbackFlow emits the raw list,
      * and the subsequent map operator enriches each item with the unread count.
      */
-    override fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
-        val roomsFlow = callbackFlow {
-            val roomsCollection = db.collection(USER_CHATROOMS_COLLECTION)
-                .document(userId)
-                .collection(CHATROOMS_SUB_COLLECTION)
-                .orderBy("lastTimestamp", Query.Direction.DESCENDING)
-                .whereEqualTo("isDeleted", false)
 
-            val subscription = roomsCollection.addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    close(error)
+    override fun listenToChatRooms(userId: String): Flow<List<ChatRoom>> {
+        val userRoomsQuery = db.collection(USER_CHATROOMS_COLLECTION)
+            .document(userId)
+            .collection(CHATROOMS_SUB_COLLECTION)
+            .orderBy("lastTimestamp", Query.Direction.DESCENDING)
+            .whereEqualTo("isDeleted", false)
+
+        return callbackFlow {
+            val subscription = userRoomsQuery.addSnapshotListener { userRoomsSnapshot, userError ->
+                if (userError != null) {
+                    close(userError)
                     return@addSnapshotListener
                 }
-                if (snapshot != null) {
-                    val chatRooms = snapshot.documents.mapNotNull { document ->
-                        document.toObject(ChatRoom::class.java)
+
+                if (userRoomsSnapshot != null) {
+                    val deferredChatRooms = userRoomsSnapshot.documents.map { userRoomDoc ->
+                        async(Dispatchers.IO) {
+                            val roomId = userRoomDoc.id
+
+                            // Step 1: Fetch the full chat room details from the main collection
+                            val mainChatRoomDoc = db.collection(CHATROOMS_COLLECTION)
+                                .document(roomId)
+                                .get()
+                                .await()
+
+                            // Step 2: IMPORTANT! Check if the document exists before processing.
+                            if (mainChatRoomDoc.exists()) {
+                                // Correctly map the main document to the ChatRoom object
+                                val fullChatRoom = mainChatRoomDoc.toObject(ChatRoom::class.java)
+
+                                // Step 3: Map the user-specific data from the user's sub-collection
+                                val userSpecificData = userRoomDoc.toObject(UserChatRoomData::class.java)
+                                val unreadCount = getUnreadCountForRoom(roomId, userSpecificData?.lastReadTimestamp ?: 0L)
+
+                                // Step 4: Combine the data and return a complete ChatRoom object
+                                fullChatRoom?.copy(
+                                    // Ensure the document ID is correctly set from the document itself
+                                    documentId = mainChatRoomDoc.id,
+                                    lastMessage = userSpecificData?.lastMessage,
+                                    lastTimestamp = userSpecificData?.lastTimestamp ?: 0L,
+                                    lastReadTimestamp = userSpecificData?.lastReadTimestamp ?: 0L,
+                                    unreadCount = unreadCount,
+                                    muted = userSpecificData?.muted ?: false
+                                )
+                            } else {
+                                // If the main document doesn't exist, return null to be filtered out
+                                Log.w(TAG, "Main chatroom document with ID '$roomId' not found. This may indicate a data inconsistency. Skipping.")
+                                null
+                            }
+                        }
                     }
-                    trySend(chatRooms)
+
+                    // Await all deferred results and filter out any nulls
+                    val finalChatRooms = runBlocking {
+                        deferredChatRooms.awaitAll().filterNotNull()
+                    }
+                    trySend(finalChatRooms)
                 }
             }
             awaitClose { subscription.remove() }
-        }
-
-        // Now we map over the flow to get the full chatroom details and unread count.
-        return roomsFlow.map { chatRooms ->
-            coroutineScope {
-                chatRooms.map { chatRoom ->
-                    async {
-                        val fullChatRoom = getChatRoomDetails(chatRoom.roomId)
-                        val unreadCount = getUnreadCountForRoom(chatRoom.roomId, chatRoom.lastReadTimestamp)
-                        // Copy the full details, then add the user-specific info like unread count
-                        fullChatRoom?.copy(
-                            unreadCount = unreadCount,
-                            lastMessage = chatRoom.lastMessage,
-                            lastTimestamp = chatRoom.lastTimestamp,
-                            lastReadTimestamp = chatRoom.lastReadTimestamp,
-                            muted = chatRoom.muted
-                        ) ?: chatRoom.copy(unreadCount = unreadCount)
-                    }
-                }.awaitAll().filterNotNull()
-            }
-        }
+        }.flowOn(Dispatchers.IO)
     }
+
+    // You will need a new data class to map the user-specific data
+    @Keep
+    data class UserChatRoomData(
+        val lastMessage: String? = null,
+        val lastTimestamp: Long = 0L,
+        val lastReadTimestamp: Long = 0L,
+        val isDeleted: Boolean = false, // <-- Add this
+        val muted: Boolean = false,
+        val title: String = "", // <-- Add this
+        val type: String = ""   // <-- Add this
+    )
 
     /**
      * A suspend function to fetch the unread message count for a specific room.
@@ -144,30 +180,35 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
      */
     override suspend fun createDirectChatRoom(roomName: String, participantIds: List<String>): Result<String> {
         return try {
-            val newRoom = mapOf(
-                // Use 'title' for consistency, but for DMs, it can be the other user's name
-                "type" to "dm",
-                "title" to roomName, // The name of the other user in a DM
-                "createdAt" to System.currentTimeMillis(),
-                "participants" to participantIds // Storing participants for DMs is fine
-            )
-            val newRoomRef = db.collection(CHATROOMS_COLLECTION).add(newRoom).await()
+            // Get a reference to a new document to get its auto-generated ID.
+            // This ID will be our single source of truth for the room.
+            val newRoomRef = db.collection(CHATROOMS_COLLECTION).document()
             val newRoomId = newRoomRef.id
 
-            // Create a document for each participant
+            // The data for the main chatroom document. This should be the complete object.
+            val mainChatRoomData = mapOf(
+                "type" to "dm",
+                "title" to roomName,
+                "createdAt" to System.currentTimeMillis(),
+                "participants" to participantIds
+                // You can add other fields here if needed.
+            )
+            // Add this data to the main collection using the generated ID
+            newRoomRef.set(mainChatRoomData).await()
+
+            // Create a minimal document for each participant's room list.
             participantIds.forEach { userId ->
                 val userRoomData = mapOf(
-                    "type" to "dm", // New: Add type to the user's room list
-                    "title" to roomName, // New: Add title to the user's room list
                     "lastMessage" to "Room created.",
                     "lastTimestamp" to System.currentTimeMillis(),
-                    "lastReadTimestamp" to System.currentTimeMillis(),
-                    "isDeleted" to false
+                    "lastReadTimestamp" to System.currentTimeMillis()
+                    // Do NOT duplicate other fields like 'type', 'title', etc.
+                    // The main chatroom document holds the source of truth for these.
                 )
                 db.collection(USER_CHATROOMS_COLLECTION)
                     .document(userId)
                     .collection(CHATROOMS_SUB_COLLECTION)
-                    .document(newRoomId)
+                    .document(newRoomId) // Use the same unique ID here
                     .set(userRoomData)
                     .await()
             }

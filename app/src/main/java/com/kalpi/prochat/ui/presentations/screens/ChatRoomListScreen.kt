@@ -201,7 +201,17 @@ fun ChatRoomListScreen(
                             contentPadding = PaddingValues(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(1.dp)
                         ) {
-                            items(items = state.chatRooms, key = { it.roomId }) { chatRoom ->
+                            items(items = state.chatRooms,
+                                key = { chatRoom ->
+                                    // ✨ The definitive fix: Use a non-empty, unique key.
+                                    // This prevents the crash if roomId is null or empty.
+                                    if (chatRoom.roomId.isNotBlank()) {
+                                        chatRoom.roomId
+                                    } else {
+                                        chatRoom.hashCode().toString()
+                                    }
+                                }
+                            ) { chatRoom ->
                                 val dismissState = rememberSwipeToDismissBoxState(
                                     confirmValueChange = {dismissValue ->
                                         when (dismissValue) {
@@ -388,7 +398,9 @@ fun ChatRoomListScreen(
                                 .heightIn(max = 200.dp)
                                 .padding(top = 8.dp)
                         ) {
-                            items(users) { user ->
+                            items(users,
+                                key = { user -> user.userId }
+                            ) { user ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()

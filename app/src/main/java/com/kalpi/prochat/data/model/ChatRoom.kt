@@ -16,6 +16,7 @@ data class ChatRoom(
     val lastReadTimestamp: Long = 0L,
     val unreadCount: Int = 0,
     val muted: Boolean = false,
+    val participants: List<String> = emptyList()
 )
 
 // Add a new data class for a member in a group chat.
