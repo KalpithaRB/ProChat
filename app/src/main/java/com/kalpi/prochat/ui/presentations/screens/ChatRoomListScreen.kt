@@ -49,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import com.kalpi.prochat.data.model.ChatRoom
+import com.kalpi.prochat.data.model.UiChatRoom
 import com.kalpi.prochat.data.model.User
 import com.kalpi.prochat.data.repository.UserRepository
 import kotlinx.coroutines.flow.collectLatest
@@ -80,7 +81,7 @@ fun ChatRoomListScreen(
 
 
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var roomToDelete by remember { mutableStateOf<ChatRoom?>(null) }
+    var roomToDelete by remember { mutableStateOf<UiChatRoom?>(null) }
 
 
 

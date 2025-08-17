@@ -20,11 +20,13 @@ data class ChatRoom(
 )
 // Add a new data class for a member in a group chat.
 // This will be used for the 'members' subcollection.
+//    val participants: List<FullChatMember> = emptyList(),
 @Keep
 data class Member(
     @DocumentId
     val userId: String = "",
     val role: String = "member",  // Can be "admin" or "member"
     val joinedAt: Long = 0L,
-    val isMuted: Boolean = false
+    val isMuted: Boolean = false,
+    val lastActiveAt: Long? = null
 )

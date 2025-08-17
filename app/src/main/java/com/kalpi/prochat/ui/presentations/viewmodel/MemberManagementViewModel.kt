@@ -5,13 +5,25 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.model.Member
 import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.data.repository.UserRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.kalpi.prochat.data.model.UiMember
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlin.collections.emptyList
+
 
 class MemberManagementViewModel(
     private val chatRoomRepository: ChatRoomRepository,
+    private val userRepository: UserRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModel() {
@@ -40,6 +52,46 @@ class MemberManagementViewModel(
         // Check user's role on startup
         checkUserRole()
     }
+
+    // A flow that emits the list of raw members from the chat room's subcollection
+    private val membersFlow = chatRoomRepository.listenToMembers(roomId)
+
+    // A flow that emits a list of all member IDs
+    private val memberIdsFlow = membersFlow
+        .map { members -> members.map { it.userId } }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // A flow that fetches user details for each member ID
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val usersMapFlow = memberIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else userRepository.listenToUsers(ids)
+    }
+
+    // The single, combined state flow for the UI. This is the key.
+    val uiMembers: StateFlow<List<UiMember>> =
+        combine(membersFlow, usersMapFlow) { members, usersMap ->
+            members.mapNotNull { member ->
+                val user = usersMap[member.userId]
+                if (user != null) {
+                    UiMember(
+                        userId = user.userId,
+                        name = user.name,
+                        role = member.role,
+                        isCurrentUser = member.userId == currentUserId,
+                        isAdmin = member.role == "admin",
+                        isMuted = member.isMuted,
+                        joinedAt = member.joinedAt
+                    )
+                } else {
+                    null
+                }
+            }
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     private fun fetchMembers() {
         // TODO: Implement a function in ChatRoomRepository to listen to members
@@ -113,13 +165,14 @@ class MemberManagementViewModel(
 
 class MemberManagementViewModelFactory(
     private val chatRoomRepository: ChatRoomRepository,
+    private val userRepository: UserRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MemberManagementViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return MemberManagementViewModel(chatRoomRepository, roomId, currentUserId) as T
+            return MemberManagementViewModel(chatRoomRepository, userRepository, roomId, currentUserId) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

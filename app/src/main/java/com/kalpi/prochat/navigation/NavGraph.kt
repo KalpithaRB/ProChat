@@ -58,7 +58,7 @@ fun AppNavGraph(
     ) {
         composable("chatRoomList") {
             val chatRoomListViewModel: ChatRoomListViewModel = viewModel(
-                factory = ChatRoomListViewModelFactory(chatRoomRepository, userRepository, userId)
+                factory = ChatRoomListViewModelFactory(chatRoomRepository, userRepository, presenceRepository,userId)
             )
             ChatRoomListScreen(
                 chatRoomListViewModel = chatRoomListViewModel,
@@ -121,6 +121,7 @@ fun AppNavGraph(
             val viewModel: MemberManagementViewModel = viewModel(
                 factory = MemberManagementViewModelFactory(
                     chatRoomRepository,
+                    userRepository,
                     roomId,
                     userId
                 )

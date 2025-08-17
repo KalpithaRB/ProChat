@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import com.kalpi.prochat.data.repository.UserRepository
+import com.kalpi.prochat.data.repository.PresenceRepository // You need to import this
+import com.kalpi.prochat.data.model.Member
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -14,38 +16,107 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.kalpi.prochat.data.model.FullChatMember
+import com.kalpi.prochat.data.model.UiChatRoom
+import com.kalpi.prochat.data.model.User
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 
 // Sealed class to represent the UI state of the chatroom list
 sealed class ChatRoomListUiState {
     object Loading : ChatRoomListUiState()
-    data class Content(val chatRooms: List<ChatRoom>) : ChatRoomListUiState()
+    data class Content(val chatRooms: List<UiChatRoom>) : ChatRoomListUiState()
     data class Error(val errorMessage: String) : ChatRoomListUiState()
 }
 
 class ChatRoomListViewModel(
     private val chatRoomRepository: ChatRoomRepository,
     private val userRepository: UserRepository,
+    private val presenceRepository: PresenceRepository,
     private val currentUserId: String
 ) : ViewModel() {
 
+    // 1. A flow that provides the base list of raw chat rooms (from Firestore)
+    private val rawChatRoomsFlow = chatRoomRepository.listenToChatRooms(currentUserId)
+
+    // A helper flow that extracts all unique participant IDs (as Strings)
+    private val allParticipantIdsFlow = rawChatRoomsFlow
+        .map { chatRooms -> chatRooms.flatMap { it.participants }.distinct() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 2. A flow that provides a real-time map of user IDs to their User details
+    private val usersMapFlow = allParticipantIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else userRepository.listenToUsers(ids)
+    }
+
+    // 3. A flow that provides a real-time map of user IDs to their last active timestamp
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val presenceMapFlow = allParticipantIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else presenceRepository.listenToPresence(ids)
+    }
+
+    // The single, unified UI state flow that combines all data streams
     val uiState: StateFlow<ChatRoomListUiState> =
-        flow {
-            emit(ChatRoomListUiState.Loading)
-            try {
-                chatRoomRepository.listenToChatRooms(currentUserId)
-                    .collect { chatRooms ->
-                        emit(ChatRoomListUiState.Content(chatRooms))
+        combine(
+            rawChatRoomsFlow,
+            usersMapFlow,
+            presenceMapFlow
+        ) { rawChatRooms, usersMap, presenceMap ->
+            // Now, we'll transform the raw data into our UI-specific model
+            val uiChatRooms = rawChatRooms.map { rawRoom ->
+                val uiParticipants = rawRoom.participants.mapNotNull { userId ->
+                    val user = usersMap[userId]
+                    val lastActiveAt = presenceMap[userId]
+                    if (user != null) {
+                        FullChatMember(
+                            userId = userId,
+                            name = user.name,
+                            lastActiveAt = lastActiveAt
+                        )
+                    } else {
+                        null // Filter out participants with no user data
                     }
-            } catch (e: Exception) {
-                Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
-                emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
+                }
+
+                // Construct the UI-specific ChatRoom object
+                UiChatRoom(
+                    documentId = rawRoom.documentId,
+                    title = rawRoom.title,
+                    participants = uiParticipants,
+                    lastMessage = rawRoom.lastMessage,
+                    lastTimestamp = rawRoom.lastTimestamp,
+                    unreadCount = rawRoom.unreadCount,
+                    muted = rawRoom.muted
+                )
             }
+            ChatRoomListUiState.Content(uiChatRooms)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = ChatRoomListUiState.Loading
         )
+//    val uiState: StateFlow<ChatRoomListUiState> =
+//        flow {
+//            emit(ChatRoomListUiState.Loading)
+//            try {
+//                chatRoomRepository.listenToChatRooms(currentUserId)
+//                    .collect { chatRooms ->
+//                        emit(ChatRoomListUiState.Content(chatRooms))
+//                    }
+//            } catch (e: Exception) {
+//                Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
+//                emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
+//            }
+//        }.stateIn(
+//            scope = viewModelScope,
+//            started = SharingStarted.WhileSubscribed(5000),
+//            initialValue = ChatRoomListUiState.Loading
+//        )
 
 
     private val _uiEvent = MutableSharedFlow<UiEvent>()

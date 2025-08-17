@@ -40,6 +40,8 @@ interface ChatRoomRepository{
 
     suspend fun getMembers(roomId: String): List<Member>
 
+    fun listenToMembers(roomId: String): Flow<List<Member>>
+
 
 }
 
@@ -566,4 +568,34 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             Log.e("ChatRoomRepository", "Error soft-deleting chatroom", e)
             Result.failure(e)
         }
+
+
+    // NEW: Function to listen to members of a specific chat room
+    override fun listenToMembers(roomId: String): Flow<List<Member>> = callbackFlow {
+        val membersRef = db.collection(CHATROOMS_COLLECTION)
+            .document(roomId)
+            .collection("members")
+
+        val subscription = membersRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                // Map the Firestore documents to your Member data class
+                val members = snapshot.documents.mapNotNull { doc ->
+                    // The member data class has a @DocumentId annotation for the userId
+                    doc.toObject(Member::class.java)
+                }
+                trySend(members)
+            }
+        }
+
+        // This block is executed when the flow is closed or cancelled
+        awaitClose {
+            subscription.remove()
+        }
+    }
+
 }

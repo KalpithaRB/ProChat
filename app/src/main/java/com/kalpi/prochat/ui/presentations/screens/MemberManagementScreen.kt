@@ -1,9 +1,11 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
@@ -17,12 +19,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalpi.prochat.data.model.Member
 import com.kalpi.prochat.data.repository.ChatRoomRepository
 import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModelFactory
+import com.kalpi.prochat.data.model.UiMember
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,7 +36,7 @@ fun MemberManagementScreen(
     onNavigateBack: (String?) -> Unit // A callback to navigate back with a message
 ) {
 
-    val members by viewModel.members.collectAsState()
+    val uiMembers by viewModel.uiMembers.collectAsState()
     val isAdmin by viewModel.isAdmin.collectAsState()
     val uiEvent by viewModel.uiEvent.collectAsState()
     val currentUserId by viewModel.currenUserId.collectAsState()
@@ -59,13 +63,12 @@ fun MemberManagementScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             LazyColumn(modifier = Modifier.weight(1f)) {
-                items(members) { member ->
+                items(uiMembers) { uiMember ->
+                    // Pass the single, unified UiMember object
                     MemberListItem(
-                        member = member,
-                        isCurrentUser = member.userId == currentUserId,
-                        isAdmin = isAdmin,
-                        onRemoveMember = { viewModel.removeMember(member.userId) },
-                        onTransferOwnership = { viewModel.transferOwnership(member.userId) }
+                        uiMember = uiMember,
+                        onRemoveMember = { viewModel.removeMember(uiMember.userId) },
+                        onTransferOwnership = { viewModel.transferOwnership(uiMember.userId) }
                     )
                 }
             }
@@ -118,9 +121,7 @@ fun MemberManagementScreen(
 
 @Composable
 fun MemberListItem(
-    member: Member,
-    isCurrentUser: Boolean,
-    isAdmin: Boolean,
+    uiMember: UiMember, // The single, new data class
     onRemoveMember: () -> Unit,
     onTransferOwnership: () -> Unit
 ) {
@@ -131,15 +132,25 @@ fun MemberListItem(
             .height(56.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Placeholder for presence indicator
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(Color.Green, shape = CircleShape)
+                .align(Alignment.CenterVertically)
+        )
+        Spacer(Modifier.width(8.dp))
+
         // User's name and role
         Column(modifier = Modifier.weight(1f)) {
-            // TODO: Replace with actual user name from a users collection
-            Text(text = member.userId, style = MaterialTheme.typography.titleMedium)
-            Text(text = if (member.role == "admin") "Admin" else "Member", style = MaterialTheme.typography.bodySmall)
+            // Use the name from the UiMember object
+            Text(text = uiMember.name, style = MaterialTheme.typography.titleMedium)
+            // Use the role from the UiMember object
+            Text(text = uiMember.role, style = MaterialTheme.typography.bodySmall)
         }
 
         // Action buttons (conditionally shown)
-        if (isAdmin && !isCurrentUser) {
+        if (uiMember.isAdmin && !uiMember.isCurrentUser) {
             IconButton(onClick = onRemoveMember) {
                 Icon(
                     Icons.Default.Delete,
