@@ -5,6 +5,7 @@ import com.google.firebase.firestore.DocumentId
 
 @Keep
 data class ChatRoom(
+    @DocumentId
     val documentId: String = "", // ✨ This will hold the Firestore document ID
     val title: String = "",
     val type: String = "",
