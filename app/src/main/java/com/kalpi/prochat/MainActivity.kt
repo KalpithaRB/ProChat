@@ -44,6 +44,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
+import com.kalpi.prochat.data.repository.PresenceRepository
 import com.kalpi.prochat.data.repository.RealChatRepository
 import com.kalpi.prochat.data.repository.RealChatRoomRepository
 import com.kalpi.prochat.navigation.AppNavGraph
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
                     val chatRoomRepository = RealChatRoomRepository(firestore)
                     val chatRepository = RealChatRepository(firestore, chatRoomRepository)
                     val userRepository = RealUserRepository(firestore)
+                    val presenceRepository = PresenceRepository(firestore)
 
                     // Navigation setup
                     val navController = rememberNavController()
@@ -94,6 +96,7 @@ class MainActivity : ComponentActivity() {
                         chatRoomRepository = chatRoomRepository,
                         chatRepository = chatRepository,
                         userRepository = userRepository,
+                        presenceRepository = presenceRepository,
                         initialRoomId = initialRoomId // Pass the deep-link ID to the graph
                     )
                 }

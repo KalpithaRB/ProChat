@@ -15,6 +15,8 @@ import com.kalpi.prochat.data.repository.UserRepository
 import android.app.Application
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.runtime.LaunchedEffect
+import com.kalpi.prochat.data.repository.PresenceRepository
 import com.kalpi.prochat.ui.presentations.screens.ChatRoomListScreen
 import com.kalpi.prochat.ui.presentations.screens.ChatScreen
 import com.kalpi.prochat.ui.presentations.screens.MemberManagementScreen
@@ -24,6 +26,7 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
 import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModelFactory
+import kotlinx.coroutines.delay
 
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
@@ -33,12 +36,19 @@ fun AppNavGraph(
     chatRoomRepository: ChatRoomRepository,
     chatRepository: ChatRepository,
     userRepository: UserRepository,
+    presenceRepository: PresenceRepository,
     initialRoomId: String?
 ) {
     val startDestination = if (initialRoomId != null) {
         "chatScreen/{roomId}/{roomName}"
     } else {
         "chatRoomList"
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            presenceRepository.updateLastActive(userId)
+            delay(10_000L) // Update every 10 seconds
+        }
     }
 
 
