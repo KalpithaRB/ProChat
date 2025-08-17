@@ -49,29 +49,43 @@ class RealChatRepository(
 
 
     override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
-        // Step 1: Perform the membership check before the transaction
-        val memberExists = chatRoomRepository.getMemberRole(roomId, message.senderId) != null
-        if (!memberExists) {
+        val chatroomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
+        val chatroomSnapshot = chatroomDocRef.get().await()
+
+        if (!chatroomSnapshot.exists()) {
+            Log.e(TAG, "Chatroom $roomId does not exist.")
+            return Result.failure(Exception("Chatroom does not exist."))
+        }
+
+        val chatroomType = chatroomSnapshot.getString("type")
+
+        // Step 1: Get participants based on the chatroom type
+        val participantIds = if (chatroomType == "group") {
+            // For group chats, get members from the subcollection
+            try {
+                db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+                    .collection("members")
+                    .get()
+                    .await()
+                    .documents.map { it.id }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch member IDs for group chat $roomId", e)
+                return Result.failure(e)
+            }
+        } else {
+            // For DMs, get participants from the document itself
+            chatroomSnapshot.get("participants") as? List<String> ?: emptyList()
+        }
+
+        // Check if the sender is a participant
+        if (!participantIds.contains(message.senderId)) {
             Log.e(TAG, "User ${message.senderId} is not a member of room $roomId and cannot send a message.")
             return Result.failure(Exception("You are not a member of this chatroom."))
         }
 
-        // Step 2: Get all members' IDs to update their user_chat_rooms collections
-        val memberIds = try {
-            db.collection(CHATROOMS_COLLECTION)
-                .document(roomId)
-                .collection("members")
-                .get()
-                .await() // This await() is now outside the transaction
-                .documents.map { it.id }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch member IDs for room $roomId", e)
-            return Result.failure(e)
-        }
-
-        // Step 3: Now, use a Firestore Transaction to ensure all writes are atomic
+        // Step 2: Now that we have the correct participants, proceed with the transaction
         return try {
-            val chatroomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
             val messageDocRef = chatroomDocRef.collection(MESSAGES_COLLECTION).document(message.id)
 
             db.runTransaction { transaction ->
@@ -80,18 +94,24 @@ class RealChatRepository(
                 transaction.set(messageDocRef, pendingMessage)
 
                 // Update the main chatroom document with the latest message and timestamp
-                transaction.update(chatroomDocRef, "lastMessage", message.text, "lastTimestamp", message.clientTimestamp)
+                transaction.update(
+                    chatroomDocRef,
+                    "lastMessage", message.text,
+                    "lastTimestamp", message.clientTimestamp
+                )
 
                 // Update the user_chat_room for all members using the list we fetched earlier
-                for (userId in memberIds) {
-                    val userChatRoomRef = db.collection("user_chat_rooms").document(userId).collection("rooms").document(roomId)
+                for (userId in participantIds) {
+                    val userChatRoomRef = db.collection("user_chat_rooms")
+                        .document(userId)
+                        .collection("rooms")
+                        .document(roomId)
                     transaction.update(userChatRoomRef, "lastTimestamp", message.clientTimestamp, "lastMessage", message.text)
                 }
-
                 null // Success
             }.await()
 
-            // Update the message status to SENT after the transaction is complete
+            // Update the message status after the transaction is complete
             updateMessageStatus(roomId, message.id, MessageStatus.SENT)
             Result.success(Unit)
         } catch (e: Exception) {
