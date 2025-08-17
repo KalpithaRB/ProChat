@@ -28,17 +28,14 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemberManagementScreen(
-    roomId: String,
-    currentUserId: String,
-    chatRoomRepository: ChatRoomRepository, // Passed from navigation
+    viewModel: MemberManagementViewModel,// Passed from navigation
     onNavigateBack: (String?) -> Unit // A callback to navigate back with a message
 ) {
-    val viewModel: MemberManagementViewModel = viewModel(
-        factory = MemberManagementViewModelFactory(chatRoomRepository, roomId, currentUserId)
-    )
+
     val members by viewModel.members.collectAsState()
     val isAdmin by viewModel.isAdmin.collectAsState()
     val uiEvent by viewModel.uiEvent.collectAsState()
+    val currentUserId by viewModel.currenUserId.collectAsState()
 
     val coroutineScope = rememberCoroutineScope()
 

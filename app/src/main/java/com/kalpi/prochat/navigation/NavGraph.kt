@@ -22,6 +22,8 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModelFactory
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModelFactory
+import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModel
+import com.kalpi.prochat.ui.presentations.viewmodel.MemberManagementViewModelFactory
 
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
@@ -106,10 +108,16 @@ fun AppNavGraph(
             val roomId = backStackEntry.arguments?.getString("roomId") ?: ""
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
 
+            val viewModel: MemberManagementViewModel = viewModel(
+                factory = MemberManagementViewModelFactory(
+                    chatRoomRepository,
+                    roomId,
+                    userId
+                )
+            )
+
             MemberManagementScreen(
-                roomId = roomId,
-                currentUserId = userId,
-                chatRoomRepository = chatRoomRepository,
+                viewModel = viewModel,
                 onNavigateBack = { message ->
                     navController.previousBackStackEntry?.savedStateHandle?.set("toastMessage", message)
                     navController.popBackStack()

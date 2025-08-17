@@ -28,7 +28,13 @@ class MemberManagementViewModel(
     private val _uiEvent = MutableStateFlow<UiEvent>(UiEvent.Idle)
     val uiEvent: StateFlow<UiEvent> = _uiEvent
 
+    private val _currentUserId = MutableStateFlow("")
+    val currenUserId: StateFlow<String> = _currentUserId
+
+
+
     init {
+        _currentUserId.value = currentUserId
         // Fetch and listen for real-time updates to members
         fetchMembers()
         // Check user's role on startup

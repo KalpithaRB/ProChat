@@ -481,7 +481,9 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                 .collection("members")
                 .get()
                 .await()
-            snapshot.documents.mapNotNull { it.toObject(Member::class.java) }
+            snapshot.documents.mapNotNull { doc ->
+                doc.toObject(Member::class.java)?.copy(userId = doc.id)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error getting members for room $roomId", e)
             emptyList()
