@@ -122,6 +122,7 @@ fun AppNavGraph(
                 factory = MemberManagementViewModelFactory(
                     chatRoomRepository,
                     userRepository,
+                    presenceRepository,
                     roomId,
                     userId
                 )

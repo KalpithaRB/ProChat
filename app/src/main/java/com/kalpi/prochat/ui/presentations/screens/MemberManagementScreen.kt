@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -121,7 +124,7 @@ fun MemberManagementScreen(
 
 @Composable
 fun MemberListItem(
-    uiMember: UiMember, // The single, new data class
+    uiMember: MemberManagementViewModel.UiMember, // The single, new data class
     onRemoveMember: () -> Unit,
     onTransferOwnership: () -> Unit
 ) {
@@ -136,7 +139,10 @@ fun MemberListItem(
         Box(
             modifier = Modifier
                 .size(12.dp)
-                .background(Color.Green, shape = CircleShape)
+                .background(
+                    color = if (uiMember.isOnline) Color.Green else Color.Gray,
+                    shape = CircleShape
+                )
                 .align(Alignment.CenterVertically)
         )
         Spacer(Modifier.width(8.dp))

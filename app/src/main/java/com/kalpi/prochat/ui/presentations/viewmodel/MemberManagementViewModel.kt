@@ -30,8 +30,8 @@ class MemberManagementViewModel(
 ) : ViewModel() {
 
     // State to hold the list of members in the room
-    private val _members = MutableStateFlow<List<Member>>(emptyList())
-    val members: StateFlow<List<Member>> = _members
+//    private val _members = MutableStateFlow<List<Member>>(emptyList())
+//    val members: StateFlow<List<Member>> = _members
 
     // State to track the current user's role
     private val _isAdmin = MutableStateFlow(false)
@@ -115,15 +115,15 @@ class MemberManagementViewModel(
             initialValue = emptyList()
         )
 
-    private fun fetchMembers() {
-        // TODO: Implement a function in ChatRoomRepository to listen to members
-        // For now, we'll use a one-time fetch.
-        viewModelScope.launch {
-            // For now, you'll need to create a function in your repository to fetch this.
-            // Let's assume you'll add 'suspend fun getMembers(roomId: String): List<Member>'
-             _members.value = chatRoomRepository.getMembers(roomId)
-        }
-    }
+//    private fun fetchMembers() {
+//        // TODO: Implement a function in ChatRoomRepository to listen to members
+//        // For now, we'll use a one-time fetch.
+//        viewModelScope.launch {
+//            // For now, you'll need to create a function in your repository to fetch this.
+//            // Let's assume you'll add 'suspend fun getMembers(roomId: String): List<Member>'
+//             _members.value = chatRoomRepository.getMembers(roomId)
+//        }
+//    }
 
     private fun checkUserRole() {
         viewModelScope.launch {
@@ -137,7 +137,7 @@ class MemberManagementViewModel(
             val result = chatRoomRepository.addMemberToGroup(roomId, newMemberId, currentUserId)
             if (result.isSuccess) {
                 _uiEvent.value = UiEvent.ShowToast("Member added successfully!")
-                fetchMembers() // Refresh the list
+//                fetchMembers() // Refresh the list
             } else {
                 _uiEvent.value = UiEvent.ShowToast(result.exceptionOrNull()?.message ?: "Failed to add member.")
             }
@@ -149,7 +149,7 @@ class MemberManagementViewModel(
             val result = chatRoomRepository.removeMemberFromGroup(roomId, memberIdToRemove)
             if (result.isSuccess) {
                 _uiEvent.value = UiEvent.ShowToast("Member removed.")
-                fetchMembers()
+//                fetchMembers()
             } else {
                 _uiEvent.value = UiEvent.ShowToast(result.exceptionOrNull()?.message ?: "Failed to remove member.")
             }
@@ -183,6 +183,17 @@ class MemberManagementViewModel(
         data class ShowToast(val message: String) : UiEvent()
         data class NavigateBack(val message: String) : UiEvent()
     }
+
+    data class UiMember(
+        val userId: String,
+        val name: String,
+        val role: String,
+        val isCurrentUser: Boolean,
+        val isAdmin: Boolean,
+        val isMuted: Boolean,
+        val joinedAt: Long,
+        val isOnline: Boolean = false
+    )
 }
 
 class MemberManagementViewModelFactory(
