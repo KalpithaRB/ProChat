@@ -17,5 +17,6 @@ data class UiMember(
     val isCurrentUser: Boolean,
     val isAdmin: Boolean,
     val isMuted: Boolean,
-    val joinedAt: Long
+    val joinedAt: Long,
+    val isOnline: Boolean = false
 )

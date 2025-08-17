@@ -10,8 +10,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import android.util.Log
 import com.kalpi.prochat.data.model.UiMember
+import com.kalpi.prochat.data.repository.PresenceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -24,6 +24,7 @@ import kotlin.collections.emptyList
 class MemberManagementViewModel(
     private val chatRoomRepository: ChatRoomRepository,
     private val userRepository: UserRepository,
+    private val presenceRepository: PresenceRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModel() {
@@ -49,7 +50,7 @@ class MemberManagementViewModel(
         _currentUserId.value = currentUserId
         // ONLY proceed if the roomId is not blank
         if (roomId.isNotBlank()) {
-            fetchMembers()
+
             checkUserRole()
         } else {
             // Handle the error case gracefully, e.g., show a toast.
@@ -75,12 +76,25 @@ class MemberManagementViewModel(
         else userRepository.listenToUsers(ids)
     }
 
+    // A flow that listens to the presence status for all members
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val presenceStatusFlow = memberIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else presenceRepository.listenToPresence(ids)
+    }
+
     // The single, combined state flow for the UI. This is the key.
     val uiMembers: StateFlow<List<UiMember>> =
-        combine(membersFlow, usersMapFlow) { members, usersMap ->
+        combine(membersFlow, usersMapFlow, presenceStatusFlow ) { members, usersMap, presenceMap ->
             members.mapNotNull { member ->
                 val user = usersMap[member.userId]
                 if (user != null) {
+                    val lastActiveTimestamp = presenceMap[member.userId]
+                    val isOnline = lastActiveTimestamp?.let {
+                        // A user is considered online if their last active timestamp is within 5 minutes.
+                        System.currentTimeMillis() - it < (5 * 60 * 1000)
+                    } ?: false
+
                     UiMember(
                         userId = user.userId,
                         name = user.name,
@@ -88,7 +102,8 @@ class MemberManagementViewModel(
                         isCurrentUser = member.userId == currentUserId,
                         isAdmin = member.role == "admin",
                         isMuted = member.isMuted,
-                        joinedAt = member.joinedAt
+                        joinedAt = member.joinedAt,
+                        isOnline = isOnline
                     )
                 } else {
                     null
@@ -173,13 +188,20 @@ class MemberManagementViewModel(
 class MemberManagementViewModelFactory(
     private val chatRoomRepository: ChatRoomRepository,
     private val userRepository: UserRepository,
+    private val presenceRepository: PresenceRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MemberManagementViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return MemberManagementViewModel(chatRoomRepository, userRepository, roomId, currentUserId) as T
+            return MemberManagementViewModel(
+                chatRoomRepository,
+                userRepository,
+                presenceRepository,
+                roomId,
+                currentUserId
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
