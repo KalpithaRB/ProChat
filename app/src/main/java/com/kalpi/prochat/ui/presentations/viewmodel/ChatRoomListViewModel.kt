@@ -67,8 +67,11 @@ class ChatRoomListViewModel(
             usersMapFlow,
             presenceMapFlow
         ) { rawChatRooms, usersMap, presenceMap ->
+
+            val validRawChatRooms = rawChatRooms.filter { it.documentId.isNotBlank() }
+
             // Now, we'll transform the raw data into our UI-specific model
-            val uiChatRooms = rawChatRooms.map { rawRoom ->
+            val uiChatRooms = validRawChatRooms.map { rawRoom ->
                 val uiParticipants = rawRoom.participants.mapNotNull { userId ->
                     val user = usersMap[userId]
                     val lastActiveAt = presenceMap[userId]
@@ -131,7 +134,7 @@ class ChatRoomListViewModel(
 
 
     /**
-     * Public function for the UI to call to mark a room as read.
+     * Public function for the UI to call to mark a room as read. but not in use now
      */
     fun onRoomClicked(roomId: String) {
         viewModelScope.launch {

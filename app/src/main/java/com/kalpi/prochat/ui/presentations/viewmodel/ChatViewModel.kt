@@ -91,17 +91,17 @@ class ChatViewModel (
 
     private val _chatRoom = MutableStateFlow<ChatRoom?>(null)
     val chatRoom: StateFlow<ChatRoom?> = _chatRoom
-    private fun loadChatRoomDetails() {
-        viewModelScope.launch {
-            try {
-                val room = chatRoomRepository.getChatRoomDetails(currentRoomId)
-                _chatRoom.value = room
-            } catch (e: Exception) {
-                // Handle error if chat room details cannot be fetched
-                Log.e(TAG, "Error fetching chat room details", e)
-            }
-        }
-    }
+//    private fun loadChatRoomDetails() {
+//        viewModelScope.launch {
+//            try {
+//                val room = chatRoomRepository.getChatRoomDetails(currentRoomId)
+//                _chatRoom.value = room
+//            } catch (e: Exception) {
+//                // Handle error if chat room details cannot be fetched
+//                Log.e(TAG, "Error fetching chat room details", e)
+//            }
+//        }
+//    }
 
     //private val networkStatusObserver = RealNetworkStatusObserver(application)
 
@@ -151,7 +151,13 @@ class ChatViewModel (
                 }
             }
         }
-        loadChatRoomDetails()
+        viewModelScope.launch {
+            // You'll need to update your ChatViewModelFactory to pass this
+            chatRoomRepository.listenToChatRoom(currentRoomId)
+                .collect { room ->
+                    _chatRoom.value = room
+                }
+        }
     }
 
 

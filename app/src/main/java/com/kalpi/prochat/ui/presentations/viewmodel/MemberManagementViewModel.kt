@@ -47,10 +47,17 @@ class MemberManagementViewModel(
 
     init {
         _currentUserId.value = currentUserId
-        // Fetch and listen for real-time updates to members
-        fetchMembers()
-        // Check user's role on startup
-        checkUserRole()
+        // ONLY proceed if the roomId is not blank
+        if (roomId.isNotBlank()) {
+            fetchMembers()
+            checkUserRole()
+        } else {
+            // Handle the error case gracefully, e.g., show a toast.
+            // You can't navigate back from the ViewModel, so emitting an event is the way.
+            viewModelScope.launch {
+                _uiEvent.value = UiEvent.NavigateBack("Failed to load members: invalid chat room ID.")
+            }
+        }
     }
 
     // A flow that emits the list of raw members from the chat room's subcollection

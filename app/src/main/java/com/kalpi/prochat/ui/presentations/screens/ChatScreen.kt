@@ -3,6 +3,7 @@ package com.kalpi.prochat.ui.presentations.screens
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -219,7 +220,12 @@ fun ChatScreen(
                                 onClick = {
                                     expanded = false
                                     // Use the local 'room' variable here
-                                    onNavigateToMemberManagement(room.documentId, currentUserId)
+                                    if (room?.documentId?.isNotBlank() == true) {
+                                        onNavigateToMemberManagement(room.documentId, currentUserId)
+                                    } else {
+                                        // Optional: Show a toast or a log message to debug why the room ID is missing.
+                                        Toast.makeText(context, "Error: Could not find chat room ID.", Toast.LENGTH_SHORT).show()
+                                    }
                                 },
                                 leadingIcon = {
                                     Icon(Icons.Outlined.People, contentDescription = "Manage Members")

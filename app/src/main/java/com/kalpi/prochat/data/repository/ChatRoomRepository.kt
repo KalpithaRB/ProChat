@@ -22,6 +22,7 @@ import kotlinx.coroutines.runBlocking
 
 interface ChatRoomRepository{
     fun listenToChatRooms(userId: String): Flow<List<ChatRoom>>
+    fun listenToChatRoom(roomId: String): Flow<ChatRoom?>
     suspend fun getUnreadCountForRoom(roomId: String, lastReadTimestamp: Long): Int
     suspend fun markRoomAsRead(userId: String, roomId: String): Result<Unit>
     suspend fun createDirectChatRoom(roomName: String, participantIds: List<String>): Result<String>
@@ -116,6 +117,20 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         val title: String = "", // <-- Add this
         val type: String = ""   // <-- Add this
     )
+
+
+    override fun listenToChatRoom(roomId: String): Flow<ChatRoom?> = callbackFlow {
+        val docRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
+        val subscription = docRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+            val chatRoom = snapshot?.toObject(ChatRoom::class.java)
+            trySend(chatRoom)
+        }
+        awaitClose { subscription.remove() }
+    }
 
     /**
      * A suspend function to fetch the unread message count for a specific room.
@@ -448,6 +463,10 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
     }
 
     override suspend fun getMemberRole(roomId: String, userId: String): String? {
+        if (roomId.isBlank()) {
+            Log.e(TAG, "Attempted to get member role with a blank roomId")
+            return null
+        }
         return try {
             val memberDoc = db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
@@ -463,6 +482,10 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
     }
 
     override suspend fun getMembers(roomId: String): List<Member> {
+        if (roomId.isBlank()) {
+            Log.e(TAG, "Attempted to get members with a blank roomId")
+            return emptyList()
+        }
         return try {
             val snapshot = db.collection(CHATROOMS_COLLECTION)
                 .document(roomId)
