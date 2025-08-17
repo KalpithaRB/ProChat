@@ -76,6 +76,7 @@ fun ChatRoomListScreen(
     var sharedRoomId by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var selectedUserIds by remember { mutableStateOf(emptySet<String>()) }
 
 
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -88,11 +89,18 @@ fun ChatRoomListScreen(
         chatRoomListViewModel.uiEvent.collectLatest { event ->
             when (event) {
                 is ChatRoomListViewModel.UiEvent.RoomCreated -> {
-                    sharedRoomId = event.roomId
-                    showShareRoomIdDialog = true
+                    // This event is now handled by the RoomCreatedAndNavigate event, so we can leave this block empty.
                 }
                 is ChatRoomListViewModel.UiEvent.RoomCreatedAndNavigate -> {
+                    // This event is received only after the room is successfully created in the ViewModel.
+                    // This is the correct place to handle navigation and state updates.
                     onRoomClicked(event.roomId, event.roomName)
+                    sharedRoomId = event.roomId // For showing the share dialog
+                    showShareRoomIdDialog = true
+                    showCreateRoomDialog = false // ✨ Correctly dismiss the dialog here!
+                    newRoomName = ""
+                    selectedUserIds = emptySet()
+                    isGroupChat = false
                 }
                 is ChatRoomListViewModel.UiEvent.RoomJoined -> {
                     // TODO: We need to get the room name here to navigate correctly
@@ -453,16 +461,14 @@ fun ChatRoomListScreen(
             },
             confirmButton = {
                 TextButton(
+                    // ✨ CORRECTED: ONLY call the ViewModel function.
+                    // DO NOT dismiss the dialog or reset state here.
                     onClick = {
                         chatRoomListViewModel.createNewRoom(
                             roomName = newRoomName,
                             recipientIds = selectedUserIds.toList(),
                             isGroupChat = isGroupChat
                         )
-                        showCreateRoomDialog = false
-                        newRoomName = ""
-                        selectedUserIds = emptySet()
-                        isGroupChat = false
                     },
                     enabled = newRoomName.isNotBlank() && selectedUserIds.isNotEmpty()
                 ) {
