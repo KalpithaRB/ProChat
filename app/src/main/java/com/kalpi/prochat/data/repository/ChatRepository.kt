@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+import com.kalpi.prochat.data.model.TypingStatus
 import kotlin.coroutines.resume
 
 //Interface that will used everywhere
@@ -321,6 +322,68 @@ class RealChatRepository(
                 .await()
         } catch (e: Exception) {
             // Log the error or handle it as needed
+        }
+    }
+
+    // Private helper function to get the correct Firestore reference
+    private fun getTypingStatusRef(roomId: String, userId: String) =
+        db.collection("typing")
+            .document(roomId)
+            .collection("users")
+            .document(userId)
+
+    /**
+     * Sends a typing status to Firestore for a specific user in a specific room.
+     * This function debounces the update by setting a timestamp.
+     * @param roomId The ID of the chat room.
+     * @param userId The ID of the current user.
+     * @param isTyping True if the user is typing, false otherwise.
+     */
+    suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
+        val status = TypingStatus(isTyping = isTyping)
+        try {
+            getTypingStatusRef(roomId, userId).set(status).await()
+        } catch (e: Exception) {
+            // Log or handle the error gracefully.
+            Log.e("ChatRepository", "Error sending typing status", e)
+        }
+    }
+
+    /**
+     * Listens for typing status updates from other users in a chat room.
+     * This flow will emit a list of users who are currently typing.
+     * @param roomId The ID of the chat room.
+     * @param currentUserId The ID of the current user, to exclude their own status.
+     */
+    fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>> = callbackFlow {
+        val typingRef = db.collection("typing")
+            .document(roomId)
+            .collection("users")
+
+        val subscription = typingRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                val typingUsers = snapshot.documents.mapNotNull { doc ->
+                    // Filter out the current user's own status
+                    if (doc.id != currentUserId) {
+                        // Create a new TypingStatus object and pass the userId
+                        val status = doc.toObject(TypingStatus::class.java)?.copy(userId = doc.id)
+                        status
+                    } else {
+                        null
+                    }
+                }.filter { it.isTyping } // A good practice to filter only for active typers
+
+                trySend(typingUsers)
+            }
+        }
+
+        awaitClose {
+            subscription.remove()
         }
     }
 }
