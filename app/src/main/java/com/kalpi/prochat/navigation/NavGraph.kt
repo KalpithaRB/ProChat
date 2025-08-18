@@ -92,6 +92,7 @@ fun AppNavGraph(
                     application,
                     chatRepository,
                     chatRoomRepository,
+                    userRepository,
                     roomId,
                     userId
                 )

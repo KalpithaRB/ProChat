@@ -270,7 +270,8 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                         "lastMessage" to "Group created.",
                         "lastTimestamp" to System.currentTimeMillis(),
                         "lastReadTimestamp" to System.currentTimeMillis(),
-                        "isDeleted" to false
+                        "isDeleted" to false,
+                        "muted" to false
                     )
                     val userChatRoomDocRef = db.collection(USER_CHATROOMS_COLLECTION)
                         .document(userId)
@@ -615,7 +616,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             }
         }
 
-        // This block is executed when the flow is closed or cancelled
+        // This block is executed when the flow is closed or cancelled 970Yb684SsHvpnEV6Bxj_dc14b3f2-0002-42d5-811b-8b79ad4b535c -dmtes , groupchat -wlGaAfvXk22bRqu5BFsL
         awaitClose {
             subscription.remove()
         }

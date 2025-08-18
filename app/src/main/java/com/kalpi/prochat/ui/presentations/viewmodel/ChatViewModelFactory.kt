@@ -5,6 +5,7 @@ import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import com.kalpi.prochat.data.repository.ChatRepository
 import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.data.repository.UserRepository
 import com.kalpi.prochat.utils.NetworkStatusObserver
 import com.kalpi.prochat.utils.RealNetworkStatusObserver
 
@@ -15,6 +16,7 @@ class ChatViewModelFactory(
     private val application: Application,
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
+    private val userRepository: UserRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModelProvider.Factory {
@@ -28,6 +30,7 @@ class ChatViewModelFactory(
                 chatRepository,
                 chatRoomRepository,
                 networkStatusObserver,
+                userRepository,
                 roomId,
                 currentUserId
             ) as T
