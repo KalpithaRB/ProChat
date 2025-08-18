@@ -68,6 +68,8 @@ private const val MAX_MESSAGE_LENGTH = 300
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInput(
+    textState: TextFieldValue,
+    onTextChange: (TextFieldValue) -> Unit,
     onSendMessage: (String) -> Unit,
     onSendImageMessage: (Uri) -> Unit,
     onSendFileMessage: (Uri) -> Unit,
@@ -75,7 +77,7 @@ fun ChatInput(
     onStopAudioRecording: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var textState by remember { mutableStateOf(TextFieldValue("")) }
+//    var textState by remember { mutableStateOf(TextFieldValue("")) }
     val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -166,12 +168,10 @@ fun ChatInput(
                 OutlinedTextField(
                     value = textState,
                     onValueChange = {
-                        // Only update textState if the new text is within the limit or being deleted
                         if (it.text.length <= MAX_MESSAGE_LENGTH) {
-                            textState = it
+                            onTextChange(it)
                         } else if (it.text.length < textState.text.length) {
-                            // Allow deletion even if over limit (though it shouldn't get there with the check)
-                            textState = it
+                            onTextChange(it)
                         }
                     },
                     placeholder = { Text("Type a message...") },
@@ -190,7 +190,7 @@ fun ChatInput(
                         onSend = {
                             if (isSendEnabled) {
                                 onSendMessage(textState.text)
-                                textState = TextFieldValue("")
+                                onTextChange(TextFieldValue(""))
                             }
                         }
                     )
@@ -214,7 +214,7 @@ fun ChatInput(
                     onClick = {
                         if (isSendEnabled) {
                             onSendMessage(textState.text)
-                            textState = TextFieldValue("")
+                            onTextChange(TextFieldValue(""))
                         }
                     },
                     enabled = isSendEnabled
@@ -248,7 +248,7 @@ fun ChatInput(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Mic, // You need to add `import androidx.compose.material.icons.filled.Mic`
+                        imageVector = Icons.Filled.Mic,
                         contentDescription = "Record Audio",
                         tint = MaterialTheme.colorScheme.primary
                     )

@@ -1,5 +1,6 @@
 package com.kalpi.prochat.data.repository
 
+import android.util.Log
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
 import com.kalpi.prochat.data.model.User
@@ -15,6 +16,7 @@ interface UserRepository {
     suspend fun getUserById(userId: String): User?
     suspend fun getUsers(): List<User>
     fun listenToUsers(userIds: List<String>): Flow<Map<String, User>>
+    suspend fun getUsersByIds(userIds: List<String>): List<User>
 }
 
 class RealUserRepository(private val firestore: FirebaseFirestore) : UserRepository {
@@ -78,6 +80,21 @@ class RealUserRepository(private val firestore: FirebaseFirestore) : UserReposit
 
         awaitClose {
             subscription.remove()
+        }
+    }
+
+    override suspend fun getUsersByIds(userIds: List<String>): List<User> {
+        if (userIds.isEmpty()) return emptyList()
+
+        return try {
+            firestore.collection("users")
+                .whereIn(FieldPath.documentId(), userIds)
+                .get()
+                .await()
+                .toObjects(User::class.java)
+        } catch (e: Exception) {
+            Log.e("RealUserRepository", "Error getting users by IDs", e)
+            emptyList()
         }
     }
 }

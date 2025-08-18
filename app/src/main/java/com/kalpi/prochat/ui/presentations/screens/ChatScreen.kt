@@ -121,6 +121,7 @@ fun ChatScreen(
     val context = LocalContext.current
 
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val typingUsers by chatViewModel.typingUsers.collectAsState()
 
     // Use a LaunchedEffect to listen for the navigation event
     // that the ViewModel will emit after a successful deletion.
@@ -277,13 +278,46 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            ChatInput(
-                onSendMessage = chatViewModel::sendMessage,
-                onSendImageMessage = chatViewModel::prepareAndSendImageMessage,
-                onSendFileMessage = chatViewModel::prepareAndSendFileMessage,
-                onStartAudioRecording = chatViewModel::startAudioRecording,
-                onStopAudioRecording = chatViewModel::stopAudioRecording
-            )
+            Column(Modifier.fillMaxWidth()) {
+                // NEW: Typing Indicator Section
+                AnimatedVisibility(
+                    visible = typingUsers.isNotEmpty(),
+                    enter = fadeIn() + slideInVertically(),
+                    exit = fadeOut() + slideOutVertically()
+                ) {
+                    // Use a Box to place the typing indicator and give it padding
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        val indicatorText = if (typingUsers.size == 1) {
+                            "${typingUsers.first()} is typing..."
+                        } else {
+                            val names = typingUsers.joinToString(", ")
+                            "$names are typing..."
+                        }
+                        Text(
+                            text = indicatorText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                ChatInput(
+                    textState = textState, // Pass the text state
+                    onTextChange = {
+                        // NEW: Update text state and notify ViewModel of typing
+                        textState = it
+                        chatViewModel.onTextChanged()
+                    },
+                    onSendMessage = chatViewModel::sendMessage,
+                    onSendImageMessage = chatViewModel::prepareAndSendImageMessage,
+                    onSendFileMessage = chatViewModel::prepareAndSendFileMessage,
+                    onStartAudioRecording = chatViewModel::startAudioRecording,
+                    onStopAudioRecording = chatViewModel::stopAudioRecording
+                )
+            }
         }
     ) { innerPadding ->
         Box(

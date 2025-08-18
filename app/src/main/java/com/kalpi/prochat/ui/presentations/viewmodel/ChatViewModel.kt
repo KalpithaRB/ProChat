@@ -1,6 +1,7 @@
 package com.kalpi.prochat.ui.presentations.viewmodel
 
 import android.app.Application
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import android.content.Context
 import android.net.Uri
 import android.util.Log
@@ -43,8 +44,18 @@ import java.io.FileOutputStream
 import android.media.MediaRecorder
 import android.os.Build
 import androidx.annotation.RequiresApi
+import com.kalpi.prochat.data.model.User
+import com.kalpi.prochat.data.repository.UserRepository
 import com.kalpi.prochat.utils.RealNetworkStatusObserver
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.receiveAsFlow
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -69,6 +80,7 @@ class ChatViewModel (
     private val chatRepository: ChatRepository,
     private val chatRoomRepository: ChatRoomRepository,
     private val networkStatusObserver: NetworkStatusObserver,
+    private val userRepository: UserRepository,
     val currentRoomId: String,
     val currentUserId: String
 
@@ -142,6 +154,45 @@ class ChatViewModel (
     private val _uploadProgress = MutableStateFlow<Map<String, Int>>(emptyMap())
     val uploadProgress: StateFlow<Map<String, Int>> = _uploadProgress.asStateFlow()
 
+    private val _typingUsers = MutableStateFlow<List<String>>(emptyList())
+
+
+    // Use a private channel to send typing events. This is perfect for a stream of quick events.
+    private val typingEventsChannel = Channel<Boolean>()
+
+    // A job to hold the debounced typing logic.
+    private var typingJob: Job? = null
+
+    // A flow that emits a list of user IDs who are currently typing.
+    private val typingUserIdsFlow: Flow<List<String>> =
+        chatRepository.listenToTypingStatus(currentRoomId, currentUserId)
+            .map { typingStatuses ->
+                // Filter out stale statuses based on a timeout (e.g., 5 seconds).
+                typingStatuses.filter { status ->
+                    System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
+                }.mapNotNull { it.userId }
+            }
+
+    // A flow that fetches user details for each typing user ID.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val typingUsersMapFlow: Flow<Map<String, User>> =
+        typingUserIdsFlow.flatMapLatest { ids ->
+            if (ids.isEmpty()) flowOf(emptyMap())
+            else userRepository.listenToUsers(ids)
+        }
+
+    // The single, combined StateFlow for the UI.
+    val typingUsers: StateFlow<List<String>> =
+        combine(typingUserIdsFlow, typingUsersMapFlow) { userIds, usersMap ->
+            userIds.mapNotNull { id ->
+                usersMap[id]?.name
+            }
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
     init {
         viewModelScope.launch {
             networkStatusObserver.observe().collect { isConnected ->
@@ -158,14 +209,65 @@ class ChatViewModel (
                     _chatRoom.value = room
                 }
         }
+
+        viewModelScope.launch {
+            chatRepository.listenToTypingStatus(currentRoomId, currentUserId)
+                .collect { typingStatuses ->
+                    // Filter out stale typing statuses based on a timeout (e.g., 5 seconds)
+                    val recentTypers = typingStatuses.filter { status ->
+                        // The user's status is only "valid" for 5 seconds after the last update.
+                        System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
+                    }
+
+                    // Look up user names for the typers
+                    val userIds = recentTypers.map { it.userId }.filterNotNull()
+                    val users = userRepository.getUsersByIds(userIds)
+                    val typingNames = userIds.mapNotNull { id -> users.find { it.userId == id }?.name }
+
+                    // Update the public StateFlow
+                    _typingUsers.value = typingNames
+                }
+        }
+
+        // NEW: Debounce and send typing events
+        viewModelScope.launch {
+            var isCurrentlyTyping = false
+            typingEventsChannel.receiveAsFlow()
+                .debounce(500L) // Wait for 500ms of no new typing events
+                .collect { isTyping ->
+                    if (isTyping && !isCurrentlyTyping) {
+                        // User started typing, send the 'true' status
+                        chatRepository.sendTypingStatus(currentRoomId, currentUserId, true)
+                        isCurrentlyTyping = true
+                    } else if (!isTyping && isCurrentlyTyping) {
+                        // User stopped typing, send the 'false' status
+                        chatRepository.sendTypingStatus(currentRoomId, currentUserId, false)
+                        isCurrentlyTyping = false
+                    }
+                }
+        }
     }
 
+
+    fun onTextChanged() {
+        viewModelScope.launch {
+            typingEventsChannel.send(true)
+        }
+    }
+
+    // NEW: Function to send a "not typing" status when the user sends a message or leaves the screen
+    fun onTypingEnded() {
+        viewModelScope.launch {
+            typingEventsChannel.send(false)
+        }
+    }
 
 
     // Sending a message
     // --- Message Sending Logic ---
     fun sendMessage(text: String) {
         if (text.isBlank()) return
+        onTypingEnded()
 
         val newMessage = ChatMessage(
             id = UUID.randomUUID().toString(),
@@ -180,6 +282,15 @@ class ChatViewModel (
         viewModelScope.launch {
             chatRepository.sendMessage(currentRoomId, newMessage)
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Clean up the typing status to prevent ghost typers.
+        viewModelScope.launch {
+            chatRepository.sendTypingStatus(currentRoomId, currentUserId, false)
+        }
+        typingEventsChannel.close()
     }
 
     fun retryFailedMessages() {

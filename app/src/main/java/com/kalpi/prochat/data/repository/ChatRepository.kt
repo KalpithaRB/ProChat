@@ -36,6 +36,9 @@ interface ChatRepository{
 
     suspend fun markMessageAsRead(chatRoomId: String, messageId: String)
 
+    suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean)
+    fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>>
+
 }
 class RealChatRepository(
     private val db: FirebaseFirestore,
@@ -339,7 +342,7 @@ class RealChatRepository(
      * @param userId The ID of the current user.
      * @param isTyping True if the user is typing, false otherwise.
      */
-    suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
+    override suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
         val status = TypingStatus(isTyping = isTyping)
         try {
             getTypingStatusRef(roomId, userId).set(status).await()
@@ -355,7 +358,7 @@ class RealChatRepository(
      * @param roomId The ID of the chat room.
      * @param currentUserId The ID of the current user, to exclude their own status.
      */
-    fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>> = callbackFlow {
+    override fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>> = callbackFlow {
         val typingRef = db.collection("typing")
             .document(roomId)
             .collection("users")
