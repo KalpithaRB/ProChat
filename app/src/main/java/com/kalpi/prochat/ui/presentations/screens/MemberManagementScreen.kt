@@ -19,10 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kalpi.prochat.data.model.Member
@@ -43,6 +47,12 @@ fun MemberManagementScreen(
     val isAdmin by viewModel.isAdmin.collectAsState()
     val uiEvent by viewModel.uiEvent.collectAsState()
     val currentUserId by viewModel.currenUserId.collectAsState()
+    val context = LocalContext.current
+    // State for the "Add Member" dialog
+    var showAddMemberDialog by remember { mutableStateOf(false) }
+
+    // State for the new member's ID
+    var newMemberIdInput by remember { mutableStateOf("") }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -70,6 +80,7 @@ fun MemberManagementScreen(
                     // Pass the single, unified UiMember object
                     MemberListItem(
                         uiMember = uiMember,
+                        currentUserIdIsAdmin = isAdmin,
                         onRemoveMember = { viewModel.removeMember(uiMember.userId) },
                         onTransferOwnership = { viewModel.transferOwnership(uiMember.userId) }
                     )
@@ -82,7 +93,7 @@ fun MemberManagementScreen(
             if (isAdmin) {
                 // Add Member button (you'll need to implement the dialog for this)
                 Button(
-                    onClick = { /* TODO: Show a dialog to add a new member */ },
+                    onClick = { showAddMemberDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Add Member")
@@ -120,11 +131,43 @@ fun MemberManagementScreen(
             MemberManagementViewModel.UiEvent.Idle -> {}
         }
     }
+
+    // Add Member Dialog
+    if (showAddMemberDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddMemberDialog = false },
+            title = { Text("Add New Member") },
+            text = {
+                OutlinedTextField(
+                    value = newMemberIdInput,
+                    onValueChange = { newMemberIdInput = it },
+                    label = { Text("Enter Member ID") }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.addMember(newMemberIdInput)
+                        showAddMemberDialog = false
+                        newMemberIdInput = ""
+                    }
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showAddMemberDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun MemberListItem(
     uiMember: MemberManagementViewModel.UiMember, // The single, new data class
+    currentUserIdIsAdmin: Boolean,
     onRemoveMember: () -> Unit,
     onTransferOwnership: () -> Unit
 ) {
@@ -135,7 +178,7 @@ fun MemberListItem(
             .height(56.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Placeholder for presence indicator
+        // for presence indicator
         Box(
             modifier = Modifier
                 .size(12.dp)
@@ -156,7 +199,7 @@ fun MemberListItem(
         }
 
         // Action buttons (conditionally shown)
-        if (uiMember.isAdmin && !uiMember.isCurrentUser) {
+        if (currentUserIdIsAdmin && !uiMember.isCurrentUser) {
             IconButton(onClick = onRemoveMember) {
                 Icon(
                     Icons.Default.Delete,
@@ -164,12 +207,15 @@ fun MemberListItem(
                     tint = MaterialTheme.colorScheme.error
                 )
             }
-            IconButton(onClick = onTransferOwnership) {
-                Icon(
-                    Icons.Default.Star,
-                    contentDescription = "Transfer ownership",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            // Logic to prevent transferring ownership to yourself
+            if (!uiMember.isAdmin) { // You can't transfer ownership to an existing admin
+                IconButton(onClick = onTransferOwnership) {
+                    Icon(
+                        Icons.Default.Star,
+                        contentDescription = "Transfer ownership",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }
