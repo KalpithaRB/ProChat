@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import android.util.Log
 import androidx.annotation.Keep
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.Query
 import com.kalpi.prochat.data.model.Member
 import kotlinx.coroutines.Dispatchers
@@ -290,6 +291,58 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         }
     }
 
+//    override suspend fun addMemberToGroup(
+//        roomId: String,
+//        userId: String,
+//        addedBy: String
+//    ): Result<Unit> {
+//        return try {
+//            // Check if the user trying to add is an admin (a basic check)
+//            val adderRole = getMemberRole(roomId, addedBy)
+//            if (adderRole != "admin") {
+//                return Result.failure(Exception("Only admins can add members."))
+//            }
+//
+//            db.runTransaction { transaction ->
+//                val memberRef = db.collection(CHATROOMS_COLLECTION)
+//                    .document(roomId)
+//                    .collection("members")
+//                    .document(userId)
+//
+//                val userRoomRef = db.collection(USER_CHATROOMS_COLLECTION)
+//                    .document(userId)
+//                    .collection(CHATROOMS_SUB_COLLECTION)
+//                    .document(roomId)
+//
+//                // Add the new member to the group's members sub-collection
+//                val newMemberData = Member(
+//                    userId = userId,
+//                    role = "member",
+//                    joinedAt = System.currentTimeMillis()
+//                )
+//                transaction.set(memberRef, newMemberData)
+//
+//                // Add the chatroom to the new user's chat list
+//                val chatRoomData = mapOf(
+//                    "title" to "", // Will be filled in by the listenToChatRooms logic
+//                    "lastMessage" to "You were added to the group.",
+//                    "lastTimestamp" to System.currentTimeMillis(),
+//                    "lastReadTimestamp" to 0,
+//                    "isDeleted" to false,
+//                    "muted" to false,
+//                    "type" to "group"
+//                )
+//                transaction.set(userRoomRef, chatRoomData)
+//                null // Indicate success
+//            }.await()
+//            Log.d(TAG, "User $userId successfully added to room $roomId by $addedBy")
+//            Result.success(Unit)
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Error adding member to group", e)
+//            Result.failure(e)
+//        }
+//    }
+
     override suspend fun addMemberToGroup(
         roomId: String,
         userId: String,
@@ -303,6 +356,9 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
             }
 
             db.runTransaction { transaction ->
+                val mainChatRoomRef = db.collection(CHATROOMS_COLLECTION)
+                    .document(roomId)
+
                 val memberRef = db.collection(CHATROOMS_COLLECTION)
                     .document(roomId)
                     .collection("members")
@@ -313,7 +369,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                     .collection(CHATROOMS_SUB_COLLECTION)
                     .document(roomId)
 
-                // Add the new member to the group's members sub-collection
+                // Step 1: Add the new member to the group's members sub-collection
                 val newMemberData = Member(
                     userId = userId,
                     role = "member",
@@ -321,7 +377,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                 )
                 transaction.set(memberRef, newMemberData)
 
-                // Add the chatroom to the new user's chat list
+                // Step 2: Add the chatroom to the new user's chat list
                 val chatRoomData = mapOf(
                     "title" to "", // Will be filled in by the listenToChatRooms logic
                     "lastMessage" to "You were added to the group.",
@@ -332,6 +388,10 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                     "type" to "group"
                 )
                 transaction.set(userRoomRef, chatRoomData)
+
+                // Step 3: Crucial addition - update the main chatroom's participants list
+                transaction.update(mainChatRoomRef, "participants", FieldValue.arrayUnion(userId))
+
                 null // Indicate success
             }.await()
             Log.d(TAG, "User $userId successfully added to room $roomId by $addedBy")
