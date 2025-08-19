@@ -52,6 +52,7 @@ class MemberManagementViewModel(
         if (roomId.isNotBlank()) {
 
             checkUserRole()
+            listenToChatRoomDetails()
         } else {
             // Handle the error case gracefully, e.g., show a toast.
             // You can't navigate back from the ViewModel, so emitting an event is the way.
@@ -82,6 +83,14 @@ class MemberManagementViewModel(
         if (ids.isEmpty()) flowOf(emptyMap())
         else presenceRepository.listenToPresence(ids)
     }
+
+    // ⭐ NEW: flows to hold the chat room's title and avatar URL
+    private val _chatRoomTitle = MutableStateFlow("")
+    val chatRoomTitle: StateFlow<String> = _chatRoomTitle
+
+    private val _chatRoomAvatarUrl = MutableStateFlow<String?>(null)
+    val chatRoomAvatarUrl: StateFlow<String?> = _chatRoomAvatarUrl
+
 
     // The single, combined state flow for the UI. This is the key.
     val uiMembers: StateFlow<List<UiMember>> =
@@ -119,6 +128,18 @@ class MemberManagementViewModel(
         viewModelScope.launch {
             val role = chatRoomRepository.getMemberRole(roomId, currentUserId)
             _isAdmin.value = role == "admin"
+        }
+    }
+
+    private fun listenToChatRoomDetails() {
+        viewModelScope.launch {
+            chatRoomRepository.listenToChatRoom(roomId)
+                .collect { chatRoom ->
+                    if (chatRoom != null) {
+                        _chatRoomTitle.value = chatRoom.title
+                        _chatRoomAvatarUrl.value = chatRoom.avatarUrl
+                    }
+                }
         }
     }
 
