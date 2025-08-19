@@ -284,3 +284,104 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+---
+# 📘 Week 4 Updates
+
+
+## Day 1 and Day 2
+
+
+## What Was Done
+
+### Day 1 – Group Chat & Membership Management
+
+* **Extended Schema for Group Rooms:**
+  Implemented Firestore schema for group chatrooms with a `chatrooms` collection and a `members` subcollection.
+  Each member document includes role (`admin` | `member`), `joinedAt`, and optional `isMuted`.
+* **Group Creation and Membership:**
+  Added `createGroupChatRoom` function to create groups with initial members and an admin.
+  Implemented UI and ViewModel logic for adding/removing members. Participants array on `chatrooms` is updated in real time when new members join.
+* **Roles & Permissions:**
+  Role-based access control (admin vs. member) drives the UI. Admin-only actions (Add/Remove, Transfer ownership) are conditionally shown.
+* **Ownership Transfer:**
+  Implemented ownership transfer from one admin to another, ensuring groups always have a leader.
+* **Leave Room Functionality:**
+  Members can leave groups freely. Admins must transfer ownership before leaving (if they are the last admin).
+* **UI & ViewModel Separation:**
+  Business logic (role checks, error handling) is centralized in the ViewModel. The UI is reactive and “dumb,” listening for `UiEvents`.
+
+---
+
+### Day 2 – Presence & Typing Indicators
+
+* **Presence Feature:**
+  Integrated presence tracking using a Firestore `/presence/{userId}` collection with a `lastActiveAt` timestamp. Presence auto-expires when users go inactive.
+  Real-time online status badges are displayed in the Member List UI by combining chatroom members and presence data.
+* **Typing Indicator (Partially Implemented):**
+  Added schema `/typing/{roomId}/{userId}` with `{ isTyping, updatedAt }`.
+  UI and logic for typing indicators are present, though not fully tested/refined yet. Multiple users’ typing states can be aggregated for “User A and User B are typing…”.
+* **Robust Data Flow:**
+  Used Kotlin Flows and the `combine` operator to aggregate members, presence, and typing states.
+  Ensures a fully reactive UI without requiring manual refreshes.
+
+---
+
+## Design Decisions and Trade-Offs
+
+* **Firestore for Presence vs. Realtime DB:**
+  Chose Firestore to keep all chat-related data in one system, simplifying architecture. Although Realtime DB could be slightly faster, Firestore’s consistency was prioritized.
+* **Reactive UI with Flows:**
+  Using `StateFlow` + `combine` ensures the UI auto-updates with presence, typing, and membership changes. Trade-off: slightly steeper learning curve but far fewer bugs.
+* **Centralized Business Logic:**
+  Permissions and validations handled in ViewModel/Repository. The trade-off is more ViewModel complexity, but the UI remains lightweight and maintainable.
+* **Dedicated UiEvents:**
+  Used `UiEvents` (e.g., `ShowAdminLeaveWarning`) instead of only `Toast` messages for richer user interactions. Slightly more boilerplate but far better UX.
+
+---
+
+## How to Run/Test
+
+1. **Build & Install on Two Devices/Emulators:**
+   Run the app on two devices with different user IDs (can temporarily hardcode).
+
+2. **Group Creation & Membership:**
+
+   * User A creates a group with themselves + User B.
+   * User A (admin) can add/remove members.
+   * Verify that User B cannot see admin-only options.
+
+3. **Ownership Transfer:**
+
+   * From User A → transfer ownership to User B.
+   * Both devices reflect the change in real time.
+   * User A becomes member, User B becomes admin.
+
+4. **Admin Leave Restrictions:**
+
+   * Admin cannot leave unless ownership is transferred.
+   * Members can leave freely.
+   * Test both flows.
+
+5. **Presence Testing:**
+
+   * User A stays in Member List screen → shows online.
+   * User B minimizes app → within \~5 min, presence badge turns gray.
+
+6. **Typing Indicator Testing (UI present, partial):**
+
+   * User A types → User B should see “User A is typing…” (logic implemented, needs refinement/debugging).
+   * Verify debounce & auto-clear behavior (5s timeout).
+
+---
+
+✅ **Acceptance Criteria Achieved**
+
+* Group chatrooms with membership and admin controls.
+* Message sending with restrictions
+* Admin add/remove/transfer ownership.
+* Leave room flow works with restrictions.
+* Presence reflected in real time.
+* Typing indicators schema + logic implemented (UI present, pending refinement).
+
+---
+
