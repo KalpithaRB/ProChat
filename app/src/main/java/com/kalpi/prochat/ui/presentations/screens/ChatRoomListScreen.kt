@@ -52,7 +52,6 @@ import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.model.UiChatRoom
 import com.kalpi.prochat.data.model.User
 import com.kalpi.prochat.data.repository.UserRepository
-import com.kalpi.prochat.ui.chat.ChatRoomAvatar
 import kotlinx.coroutines.flow.collectLatest
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.ChatRoomListItem
@@ -302,9 +301,6 @@ fun ChatRoomListScreen(
                                                 .padding(16.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            ChatRoomAvatar(chatRoom)
-
-                                            Spacer(Modifier.width(16.dp))
                                             // This is your ChatRoomListItem's content, but we'll put it directly here
                                             Column(
                                                 modifier = Modifier.weight(1f) // This makes the Column take up all available space
