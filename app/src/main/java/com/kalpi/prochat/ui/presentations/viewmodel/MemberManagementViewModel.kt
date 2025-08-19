@@ -115,16 +115,6 @@ class MemberManagementViewModel(
             initialValue = emptyList()
         )
 
-//    private fun fetchMembers() {
-//        // TODO: Implement a function in ChatRoomRepository to listen to members
-//        // For now, we'll use a one-time fetch.
-//        viewModelScope.launch {
-//            // For now, you'll need to create a function in your repository to fetch this.
-//            // Let's assume you'll add 'suspend fun getMembers(roomId: String): List<Member>'
-//             _members.value = chatRoomRepository.getMembers(roomId)
-//        }
-//    }
-
     private fun checkUserRole() {
         viewModelScope.launch {
             val role = chatRoomRepository.getMemberRole(roomId, currentUserId)
@@ -162,7 +152,12 @@ class MemberManagementViewModel(
             if (result.isSuccess) {
                 _uiEvent.value = UiEvent.NavigateBack("You have left the group.")
             } else {
-                _uiEvent.value = UiEvent.ShowToast(result.exceptionOrNull()?.message ?: "Failed to leave group.")
+                val errorMessage = result.exceptionOrNull()?.message ?: "Failed to leave group."
+                if (errorMessage.contains("Admins must transfer ownership")) {
+                    _uiEvent.value = UiEvent.ShowAdminLeaveWarning(errorMessage)
+                } else {
+                    _uiEvent.value = UiEvent.ShowToast(errorMessage)
+                }
             }
         }
     }
@@ -182,6 +177,7 @@ class MemberManagementViewModel(
         data object Idle : UiEvent()
         data class ShowToast(val message: String) : UiEvent()
         data class NavigateBack(val message: String) : UiEvent()
+        data class ShowAdminLeaveWarning(val message: String) : UiEvent()
     }
 
     data class UiMember(

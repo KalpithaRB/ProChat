@@ -1,6 +1,7 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,6 +55,11 @@ fun MemberManagementScreen(
     // State for the new member's ID
     var newMemberIdInput by remember { mutableStateOf("") }
 
+    // ⭐ State for the ownership transfer confirmation dialog
+    var showTransferOwnershipDialog by remember { mutableStateOf(false) }
+    var selectedMemberIdToTransfer by remember { mutableStateOf<String?>(null) }
+    var showAdminLeaveDialog by remember { mutableStateOf(false) }
+
     val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
@@ -82,7 +88,10 @@ fun MemberManagementScreen(
                         uiMember = uiMember,
                         currentUserIdIsAdmin = isAdmin,
                         onRemoveMember = { viewModel.removeMember(uiMember.userId) },
-                        onTransferOwnership = { viewModel.transferOwnership(uiMember.userId) }
+                        onTransferOwnership = {
+                            selectedMemberIdToTransfer = uiMember.userId
+                            showTransferOwnershipDialog = true
+                        }
                     )
                 }
             }
@@ -103,14 +112,7 @@ fun MemberManagementScreen(
 
             // Leave Group button
             Button(
-                onClick = {
-                    // Check if current user is admin before showing a confirmation
-                    if (isAdmin) {
-                        // TODO: Show a confirmation dialog for admin to ensure ownership transfer is handled
-                    } else {
-                        viewModel.leaveGroup()
-                    }
-                },
+                onClick = { viewModel.leaveGroup() },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
@@ -123,10 +125,13 @@ fun MemberManagementScreen(
     LaunchedEffect(uiEvent) {
         when (val event = uiEvent) {
             is MemberManagementViewModel.UiEvent.ShowToast -> {
-                // TODO: Show a toast with event.message
+                Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
             }
             is MemberManagementViewModel.UiEvent.NavigateBack -> {
                 onNavigateBack(event.message)
+            }
+            is MemberManagementViewModel.UiEvent.ShowAdminLeaveWarning -> {
+                showAdminLeaveDialog = true
             }
             MemberManagementViewModel.UiEvent.Idle -> {}
         }
@@ -158,6 +163,46 @@ fun MemberManagementScreen(
             dismissButton = {
                 Button(onClick = { showAddMemberDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Ownership Transfer Confirmation Dialog
+    if (showTransferOwnershipDialog) {
+        AlertDialog(
+            onDismissRequest = { showTransferOwnershipDialog = false },
+            title = { Text("Transfer Ownership") },
+            text = { Text("Are you sure you want to transfer ownership of this group? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedMemberIdToTransfer?.let {
+                            viewModel.transferOwnership(it)
+                        }
+                        showTransferOwnershipDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Confirm Transfer")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showTransferOwnershipDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAdminLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showAdminLeaveDialog = false },
+            title = { Text("Cannot Leave Group") },
+            text = { Text("You are the admin of this group. You must transfer ownership to another member before you can leave.") },
+            confirmButton = {
+                Button(onClick = { showAdminLeaveDialog = false }) {
+                    Text("OK")
                 }
             }
         )
