@@ -303,7 +303,7 @@ fun MemberManagementScreen(
         )
     }
 
-    // ⭐ CORRECTED: Avatar Options Dialog using Dialog and Card
+    // Avatar Options Dialog using Dialog and Card
     if (showAvatarOptionsDialog) {
         Dialog(onDismissRequest = { showAvatarOptionsDialog = false }) {
             Card(
@@ -324,7 +324,7 @@ fun MemberManagementScreen(
                     TextButton(
                         onClick = {
                             showAvatarOptionsDialog = false
-                            // TODO: Implement image selection logic
+                            pickImageLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

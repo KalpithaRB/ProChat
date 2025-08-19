@@ -1,5 +1,6 @@
 package com.kalpi.prochat.data.repository
 
+import android.net.Uri
 import com.google.firebase.firestore.FirebaseFirestore
 import com.kalpi.prochat.data.model.ChatRoom
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.coroutines.suspendCoroutine
 
 interface ChatRoomRepository{
     fun listenToChatRooms(userId: String): Flow<List<ChatRoom>>
@@ -43,6 +45,8 @@ interface ChatRoomRepository{
     suspend fun getMembers(roomId: String): List<Member>
 
     fun listenToMembers(roomId: String): Flow<List<Member>>
+
+    suspend fun updateChatRoomAvatar(roomId: String, imageUrl: String): Result<Unit>
 
 
 }
@@ -679,6 +683,22 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
         // This block is executed when the flow is closed or cancelled 970Yb684SsHvpnEV6Bxj_dc14b3f2-0002-42d5-811b-8b79ad4b535c -dmtes , groupchat -wlGaAfvXk22bRqu5BFsL
         awaitClose {
             subscription.remove()
+        }
+    }
+
+    /**
+     * Uploads an image to Cloudinary and updates the chat room's avatar URL in Firestore.
+     */
+    override suspend fun updateChatRoomAvatar(roomId: String, imageUrl: String): Result<Unit>{
+        return try {
+            db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .update("avatarUrl", imageUrl)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating chat room avatar URL", e)
+            Result.failure(e)
         }
     }
 

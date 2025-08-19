@@ -19,12 +19,15 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlin.collections.emptyList
+import android.net.Uri
+import com.kalpi.prochat.data.repository.ImageRepository
 
 
 class MemberManagementViewModel(
     private val chatRoomRepository: ChatRoomRepository,
     private val userRepository: UserRepository,
     private val presenceRepository: PresenceRepository,
+    private val imageRepository: ImageRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModel() {
@@ -194,6 +197,31 @@ class MemberManagementViewModel(
         }
     }
 
+    /**
+    * Uploads a new avatar for the group chat.
+    * @param imageUri The Uri of the selected image.
+    */
+    fun uploadGroupAvatar(imageUri: Uri) {
+        viewModelScope.launch {
+            _uiEvent.value = UiEvent.ShowToast("Uploading group photo...")
+
+            // Step 1: Upload the image to Cloudinary using the ImageRepository
+            val uploadResult = imageRepository.uploadImage(imageUri)
+
+            uploadResult.onSuccess { imageUrl ->
+                // Step 2: If upload succeeds, update the Firestore document via ChatRoomRepository
+                val updateResult = chatRoomRepository.updateChatRoomAvatar(roomId, imageUrl)
+                updateResult.onSuccess {
+                    _uiEvent.value = UiEvent.ShowToast("Group photo updated successfully!")
+                }.onFailure {
+                    _uiEvent.value = UiEvent.ShowToast(it.message ?: "Failed to update chat room.")
+                }
+            }.onFailure {
+                _uiEvent.value = UiEvent.ShowToast(it.message ?: "Failed to upload photo.")
+            }
+        }
+    }
+
     sealed class UiEvent {
         data object Idle : UiEvent()
         data class ShowToast(val message: String) : UiEvent()
@@ -217,6 +245,7 @@ class MemberManagementViewModelFactory(
     private val chatRoomRepository: ChatRoomRepository,
     private val userRepository: UserRepository,
     private val presenceRepository: PresenceRepository,
+    private val imageRepository: ImageRepository,
     private val roomId: String,
     private val currentUserId: String
 ) : ViewModelProvider.Factory {
@@ -227,6 +256,7 @@ class MemberManagementViewModelFactory(
                 chatRoomRepository,
                 userRepository,
                 presenceRepository,
+                imageRepository,
                 roomId,
                 currentUserId
             ) as T

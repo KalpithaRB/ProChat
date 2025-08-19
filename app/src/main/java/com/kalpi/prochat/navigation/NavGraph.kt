@@ -16,6 +16,7 @@ import android.app.Application
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.LaunchedEffect
+import com.kalpi.prochat.data.repository.ImageRepository
 import com.kalpi.prochat.data.repository.PresenceRepository
 import com.kalpi.prochat.ui.presentations.screens.ChatRoomListScreen
 import com.kalpi.prochat.ui.presentations.screens.ChatScreen
@@ -37,6 +38,7 @@ fun AppNavGraph(
     chatRepository: ChatRepository,
     userRepository: UserRepository,
     presenceRepository: PresenceRepository,
+    imageRepository: ImageRepository,
     initialRoomId: String?
 ) {
     val startDestination = if (initialRoomId != null) {
@@ -124,6 +126,7 @@ fun AppNavGraph(
                     chatRoomRepository,
                     userRepository,
                     presenceRepository,
+                    imageRepository,
                     roomId,
                     userId
                 )
