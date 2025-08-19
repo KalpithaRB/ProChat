@@ -11,7 +11,8 @@ data class UiChatRoom(
     val lastMessage: String? = null,
     val lastTimestamp: Long = 0L,
     val unreadCount: Int = 0,
-    val muted: Boolean = false
+    val muted: Boolean = false,
+    val avatarUrl: String? = null
     // You can add more fields as needed
 )
 

@@ -94,7 +94,8 @@ class ChatRoomListViewModel(
                     lastMessage = rawRoom.lastMessage,
                     lastTimestamp = rawRoom.lastTimestamp,
                     unreadCount = rawRoom.unreadCount,
-                    muted = rawRoom.muted
+                    muted = rawRoom.muted,
+                    avatarUrl = rawRoom.avatarUrl
                 )
             }
             ChatRoomListUiState.Content(uiChatRooms)

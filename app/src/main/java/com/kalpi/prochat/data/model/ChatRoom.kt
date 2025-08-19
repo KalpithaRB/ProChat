@@ -17,7 +17,8 @@ data class ChatRoom(
     val lastReadTimestamp: Long = 0L,
     val unreadCount: Int = 0,
     val muted: Boolean = false,
-    val isDeleted: Boolean = false // <-- It's important to have this in your data model.
+    val isDeleted: Boolean = false,
+    val avatarUrl: String? = null
 )
 // Add a new data class for a member in a group chat.
 // This will be used for the 'members' subcollection.
