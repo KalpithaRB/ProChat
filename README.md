@@ -284,3 +284,64 @@ Override onNewToken() to retrieve the device's FCM token.
 
 Temporarily, you can send test notifications via the Firebase Console until server-side integration is complete.
 
+# Day-2 Updates
+
+### What was done
+
+**Room Avatar Feature**
+
+* Added support for chat room avatars using Cloudinary for image storage.
+* Modified `ChatRoom` data model to include an `avatarUrl` field.
+* Updated `RealChatRoomRepository` to handle avatar upload and Firestore updates.
+* Integrated avatar display in `ChatRoomListItem` and `MemberManagementScreen`.
+* Admin users can now upload or change the group chat avatar from the `MemberManagementScreen`.
+* UI automatically refreshes to show the updated avatar thanks to real-time Firestore listeners.
+
+**Typing Indicator Feature**
+
+* Implemented real-time typing indicators for chatrooms.
+* Fixed a schema mismatch issue: Firestore stored typing status as `typing`, while the Kotlin model expected `isTyping`. This mismatch was corrected by renaming the data class property to match Firestore’s schema.
+* Debounced typing updates (5s timeout) to avoid excessive writes.
+* Typing indicator now appears in the chat room footer, showing active users (e.g., “UserA is typing…”).
+* Multiple users typing are aggregated in the UI.
+
+---
+
+### Design decisions and trade-offs
+
+**Cloudinary for Media Storage**
+
+* We chose Cloudinary over Firebase Storage to manage avatars because it’s more scalable and cost-efficient for handling media.
+* Cloudinary keeps Firestore documents lightweight (only storing the image URL instead of Base64-encoded blobs).
+* This results in faster reads/writes and a smoother user experience.
+
+**Schema Consistency for Typing Indicator**
+
+* Aligning the Kotlin model (`typing`) with Firestore schema avoided silent deserialization errors.
+* The trade-off is less descriptive naming (e.g., `isTyping` was more natural in Kotlin), but schema consistency is critical for reliable real-time updates.
+
+**Debounce Strategy**
+
+* We use a 500ms debounce on the typing event channel and a 5s timeout for auto-clearing typing states.
+* This reduces unnecessary writes to Firestore while still providing responsive feedback in the UI.
+* The trade-off is that typing status lingers for \~5 seconds after the user stops typing, which could feel slightly delayed, but it balances UX with performance.
+
+---
+
+### How to run/test
+
+1. **Run the app** on two devices or emulators (User A and User B).
+2. **Test Room Avatar**:
+
+   * On User A (admin), go to the `MemberManagementScreen`.
+   * Select/upload a new avatar image.
+   * Verify that the new avatar appears immediately in the group list and member management screen on both devices.
+3. **Test Typing Indicator**:
+
+   * On User A, open a group chat and start typing.
+   * On User B, verify that “UserA is typing…” appears in the chat footer.
+   * Stop typing and wait \~5 seconds. The indicator should disappear automatically.
+   * Repeat with both users typing simultaneously — the UI should aggregate typing statuses correctly.
+
+
+
