@@ -90,6 +90,7 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                             // This suspend function call is now within a coroutine
                             val unreadCount = getUnreadCountForRoom(doc.id, userSpecificData?.lastReadTimestamp ?: 0L)
 
+                            val mainChatRoom = getChatRoomDetails(doc.id)
                             ChatRoom(
                                 documentId = doc.id,
                                 title = userSpecificData?.title ?: "No Title",
@@ -97,7 +98,8 @@ class RealChatRoomRepository(private val db: FirebaseFirestore) : ChatRoomReposi
                                 lastMessage = userSpecificData?.lastMessage,
                                 lastTimestamp = userSpecificData?.lastTimestamp ?: 0L,
                                 unreadCount = unreadCount,
-                                muted = userSpecificData?.muted ?: false
+                                muted = userSpecificData?.muted ?: false,
+                                avatarUrl = mainChatRoom?.avatarUrl
                             )
                         }
                     } ?: emptyList()

@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -45,9 +47,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
+import coil.compose.rememberAsyncImagePainter
 import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.model.UiChatRoom
 import com.kalpi.prochat.data.model.User
@@ -301,6 +306,35 @@ fun ChatRoomListScreen(
                                                 .padding(16.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(56.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (chatRoom.avatarUrl.isNullOrBlank()) {
+                                                    val initials = chatRoom.title.split(" ")
+                                                        .take(2)
+                                                        .map { it.firstOrNull()?.uppercaseChar() ?: ' ' }
+                                                        .joinToString("")
+                                                        .trim()
+                                                    Text(
+                                                        text = initials.ifEmpty { "?" },
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                } else {
+                                                    Image(
+                                                        painter = rememberAsyncImagePainter(model = chatRoom.avatarUrl),
+                                                        contentDescription = "Chat Room Avatar",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(Modifier.width(16.dp))
                                             // This is your ChatRoomListItem's content, but we'll put it directly here
                                             Column(
                                                 modifier = Modifier.weight(1f) // This makes the Column take up all available space
