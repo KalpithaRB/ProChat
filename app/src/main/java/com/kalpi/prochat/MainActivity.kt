@@ -62,8 +62,8 @@ class MainActivity : ComponentActivity() {
                     val firestore = Firebase.firestore
 
                     // Get the unique user ID, which is needed for all ViewModels
-                    //val uniqueUserId = "NZNFAVhdXdUTHDBxXsSM"
-                     val uniqueUserId = UserManager.getOrCreateUserId(LocalContext.current)
+                    val uniqueUserId = "NZNFAVhdXdUTHDBxXsSM"
+                    //val uniqueUserId = UserManager.getOrCreateUserId(LocalContext.current)
 
                     // Get the initial room ID from a deep link, if it exists
                     val initialRoomId: String? = intent?.data?.lastPathSegment

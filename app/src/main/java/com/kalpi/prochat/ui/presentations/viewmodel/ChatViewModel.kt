@@ -169,7 +169,7 @@ class ChatViewModel (
             .map { typingStatuses ->
                 // Filter out stale statuses based on a timeout (e.g., 5 seconds).
                 typingStatuses.filter { status ->
-                    System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
+                    status.typing && System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
                 }.mapNotNull { it.userId }
             }
 
@@ -184,9 +184,12 @@ class ChatViewModel (
     // The single, combined StateFlow for the UI.
     val typingUsers: StateFlow<List<String>> =
         combine(typingUserIdsFlow, typingUsersMapFlow) { userIds, usersMap ->
-            userIds.mapNotNull { id ->
+            val typingNames = userIds.mapNotNull { id ->
                 usersMap[id]?.name
             }
+            // ⭐ ADD THIS LOG STATEMENT
+            Log.d(TAG, "New typing users list: $typingNames")
+            typingNames
         }.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -210,24 +213,24 @@ class ChatViewModel (
                 }
         }
 
-        viewModelScope.launch {
-            chatRepository.listenToTypingStatus(currentRoomId, currentUserId)
-                .collect { typingStatuses ->
-                    // Filter out stale typing statuses based on a timeout (e.g., 5 seconds)
-                    val recentTypers = typingStatuses.filter { status ->
-                        // The user's status is only "valid" for 5 seconds after the last update.
-                        System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
-                    }
-
-                    // Look up user names for the typers
-                    val userIds = recentTypers.map { it.userId }.filterNotNull()
-                    val users = userRepository.getUsersByIds(userIds)
-                    val typingNames = userIds.mapNotNull { id -> users.find { it.userId == id }?.name }
-
-                    // Update the public StateFlow
-                    _typingUsers.value = typingNames
-                }
-        }
+//        viewModelScope.launch {
+//            chatRepository.listenToTypingStatus(currentRoomId, currentUserId)
+//                .collect { typingStatuses ->
+//                    // Filter out stale typing statuses based on a timeout (e.g., 5 seconds)
+//                    val recentTypers = typingStatuses.filter { status ->
+//                        // The user's status is only "valid" for 5 seconds after the last update.
+//                        System.currentTimeMillis() - (status.updatedAt?.time ?: 0) < 5000
+//                    }
+//
+//                    // Look up user names for the typers
+//                    val userIds = recentTypers.map { it.userId }.filterNotNull()
+//                    val users = userRepository.getUsersByIds(userIds)
+//                    val typingNames = userIds.mapNotNull { id -> users.find { it.userId == id }?.name }
+//
+//                    // Update the public StateFlow
+//                    _typingUsers.value = typingNames
+//                }
+//        }
 
         // NEW: Debounce and send typing events
         viewModelScope.launch {

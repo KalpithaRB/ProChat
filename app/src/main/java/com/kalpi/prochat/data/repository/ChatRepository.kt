@@ -343,7 +343,7 @@ class RealChatRepository(
      * @param isTyping True if the user is typing, false otherwise.
      */
     override suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
-        val status = TypingStatus(isTyping = isTyping)
+        val status = TypingStatus(typing = isTyping)
         try {
             getTypingStatusRef(roomId, userId).set(status).await()
         } catch (e: Exception) {
@@ -379,7 +379,7 @@ class RealChatRepository(
                     } else {
                         null
                     }
-                }.filter { it.isTyping } // A good practice to filter only for active typers
+                }.filter { it.typing } // A good practice to filter only for active typers
 
                 trySend(typingUsers)
             }
