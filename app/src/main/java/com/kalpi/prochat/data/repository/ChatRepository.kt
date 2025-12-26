@@ -9,15 +9,40 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.kalpi.prochat.data.model.ChatMessage
 import com.kalpi.prochat.data.model.MessageStatus
+import com.kalpi.prochat.data.repository.ChatRoomRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+import com.kalpi.prochat.data.model.TypingStatus
 import kotlin.coroutines.resume
 
-class ChatRepository(private val db: FirebaseFirestore) {
+//Interface that will used everywhere
+interface ChatRepository{
+    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit>
+    suspend fun getFailedMessages(roomId: String): List<ChatMessage>
+    suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
+        uploadPreset: String,
+        messageIdForLog: String,
+        onProgress: (progress: Int) -> Unit
+    ): Result<String>
+
+    fun listenToMessages(roomId: String): Flow<List<ChatMessage>>
+    suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit>
+    suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String)
+
+    suspend fun markMessageAsRead(chatRoomId: String, messageId: String)
+
+    suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean)
+    fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>>
+
+}
+class RealChatRepository(
+    private val db: FirebaseFirestore,
+    private val chatRoomRepository: ChatRoomRepository) : ChatRepository {
 
     companion object {
         const val DEFAULT_ROOM_ID = "kalpis_chat_room" // Placeholder
@@ -26,54 +51,100 @@ class ChatRepository(private val db: FirebaseFirestore) {
         private const val MESSAGES_COLLECTION = "messages"
     }
 
-    suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
-        return try {
-            // Step 1: Save the message to the chatroom's message subcollection
-            val messageDocRef = db.collection(CHATROOMS_COLLECTION)
-                .document(roomId)
-                .collection(MESSAGES_COLLECTION)
-                .document(message.id)
-            messageDocRef.set(message).await()
-            messageDocRef.update("status", MessageStatus.SENT.name).await()
 
-            // Step 2 & 3: Update the chatroom documents for EACH participant
-            val chatRoomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
-            val chatRoomDocument = chatRoomDocRef.get().await()
-            val participants = chatRoomDocument.get("participants") as? List<String> ?: emptyList()
-            val userChatroomsCollection = db.collection("user_chat_rooms")
+    override suspend fun sendMessage(roomId: String, message: ChatMessage): Result<Unit> {
+        val chatroomDocRef = db.collection(CHATROOMS_COLLECTION).document(roomId)
+        val chatroomSnapshot = chatroomDocRef.get().await()
 
-            for (participantId in participants) {
-                val updates = mutableMapOf<String, Any>()
+        if (!chatroomSnapshot.exists()) {
+            Log.e(TAG, "Chatroom $roomId does not exist.")
+            return Result.failure(Exception("Chatroom does not exist."))
+        }
 
-                // FIX: Use the Elvis operator to handle nullable text
-                updates["lastMessage"] = message.text ?: ""
-                updates["lastTimestamp"] = message.clientTimestamp
+        val chatroomType = chatroomSnapshot.getString("type")
 
-                // NEW LOGIC: If the participant is the sender,
-                // we also update their lastReadTimestamp
-                if (participantId == message.senderId) {
-                    updates["lastReadTimestamp"] = message.clientTimestamp
-                }
-
-                userChatroomsCollection.document(participantId)
-                    .collection("rooms")
+        // Step 1: Get participants based on the chatroom type
+        val participantIds = if (chatroomType == "group") {
+            // For group chats, get members from the subcollection
+            try {
+                db.collection(CHATROOMS_COLLECTION)
                     .document(roomId)
-                    .update(updates)
+                    .collection("members")
+                    .get()
                     .await()
+                    .documents.map { it.id }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch member IDs for group chat $roomId", e)
+                return Result.failure(e)
             }
+        } else {
+            // For DMs, get participants from the document itself
+            chatroomSnapshot.get("participants") as? List<String> ?: emptyList()
+        }
 
-            Log.d(TAG, "Message sent and chatroom documents updated for all participants in room: $roomId")
+        // Check if the sender is a participant
+        if (!participantIds.contains(message.senderId)) {
+            Log.e(TAG, "User ${message.senderId} is not a member of room $roomId and cannot send a message.")
+            return Result.failure(Exception("You are not a member of this chatroom."))
+        }
+
+        // Step 2: Now that we have the correct participants, proceed with the transaction
+        return try {
+            val messageDocRef = chatroomDocRef.collection(MESSAGES_COLLECTION).document(message.id)
+
+            db.runTransaction { transaction ->
+                // Save the message
+                val pendingMessage = message.copy(status = MessageStatus.SENDING)
+                transaction.set(messageDocRef, pendingMessage)
+
+                // Update the main chatroom document with the latest message and timestamp
+                transaction.update(
+                    chatroomDocRef,
+                    "lastMessage", message.text,
+                    "lastTimestamp", message.clientTimestamp
+                )
+
+                // Update the user_chat_room for all members using the list we fetched earlier
+                for (userId in participantIds) {
+                    val userChatRoomRef = db.collection("user_chat_rooms")
+                        .document(userId)
+                        .collection("rooms")
+                        .document(roomId)
+                    transaction.update(userChatRoomRef, "lastTimestamp", message.clientTimestamp, "lastMessage", message.text)
+                }
+                null // Success
+            }.await()
+
+            // Update the message status after the transaction is complete
+            updateMessageStatus(roomId, message.id, MessageStatus.SENT)
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending message or updating chatroom documents", e)
+            updateMessageStatus(roomId, message.id, MessageStatus.FAILED)
             Result.failure(e)
         }
     }
-    // Placeholder for Day 3
-    // fun getMessagesFlow(roomId: String): Flow<List<ChatMessage>> { ... }
 
-    suspend fun uploadImageToCloudinaryAndGetUrl(
-        imageUri: Uri,
+    override suspend fun getFailedMessages(roomId: String): List<ChatMessage> {
+        return try {
+            val snapshot = db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection(MESSAGES_COLLECTION)
+                .whereEqualTo("status", MessageStatus.FAILED.name)
+                .get()
+                .await()
+
+            snapshot.documents.mapNotNull { document ->
+                document.toObject(ChatMessage::class.java)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting failed messages for room $roomId", e)
+            emptyList()
+        }
+    }
+
+    override suspend fun uploadFileToCloudinaryAndGetUrl(
+        fileUri: Uri,
         uploadPreset: String, // e.g., "prochat_unsigned_images"
         messageIdForLog: String, // For better logging
         onProgress: (progress: Int) -> Unit
@@ -92,9 +163,9 @@ class ChatRepository(private val db: FirebaseFirestore) {
         // +++ END DIAGNOSTIC LOG +++
 
         return suspendCancellableCoroutine { continuation ->
-            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $imageUri")
+            Log.d(TAG, "Starting Cloudinary upload for message: $messageIdForLog, URI: $fileUri")
 
-            val request = MediaManager.get().upload(imageUri)
+            val request = MediaManager.get().upload(fileUri)
                 .unsigned(uploadPreset) // Use your unsigned upload preset
                 .option(
                     "public_id",
@@ -186,7 +257,7 @@ class ChatRepository(private val db: FirebaseFirestore) {
      * Listens for real-time messages from Firestore and emits them as a Flow.
      * This uses the existing ChatMessage data model without modification.
      */
-    fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
+    override fun listenToMessages(roomId: String): Flow<List<ChatMessage>> = callbackFlow {
         val messagesCollection = db.collection(CHATROOMS_COLLECTION)
             .document(roomId)
             .collection(MESSAGES_COLLECTION)
@@ -211,6 +282,109 @@ class ChatRepository(private val db: FirebaseFirestore) {
         }
 
         // The awaitClose block is important to cancel the listener when the Flow is no longer needed
+        awaitClose {
+            subscription.remove()
+        }
+    }
+
+    override suspend fun updateMessageStatus(roomId: String, messageId: String, newStatus: MessageStatus): Result<Unit> {
+        return try {
+            db.collection(CHATROOMS_COLLECTION)
+                .document(roomId)
+                .collection(MESSAGES_COLLECTION)
+                .document(messageId)
+                .update("status", newStatus.name)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating message status for message $messageId", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun markMessageAsDelivered(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.DELIVERED)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
+        }
+    }
+
+    override suspend fun markMessageAsRead(chatRoomId: String, messageId: String) {
+        try {
+            db.collection("chat_rooms")
+                .document(chatRoomId)
+                .collection("messages")
+                .document(messageId)
+                .update("status", MessageStatus.READ)
+                .await()
+        } catch (e: Exception) {
+            // Log the error or handle it as needed
+        }
+    }
+
+    // Private helper function to get the correct Firestore reference
+    private fun getTypingStatusRef(roomId: String, userId: String) =
+        db.collection("typing")
+            .document(roomId)
+            .collection("users")
+            .document(userId)
+
+    /**
+     * Sends a typing status to Firestore for a specific user in a specific room.
+     * This function debounces the update by setting a timestamp.
+     * @param roomId The ID of the chat room.
+     * @param userId The ID of the current user.
+     * @param isTyping True if the user is typing, false otherwise.
+     */
+    override suspend fun sendTypingStatus(roomId: String, userId: String, isTyping: Boolean) {
+        val status = TypingStatus(isTyping = isTyping)
+        try {
+            getTypingStatusRef(roomId, userId).set(status).await()
+        } catch (e: Exception) {
+            // Log or handle the error gracefully.
+            Log.e("ChatRepository", "Error sending typing status", e)
+        }
+    }
+
+    /**
+     * Listens for typing status updates from other users in a chat room.
+     * This flow will emit a list of users who are currently typing.
+     * @param roomId The ID of the chat room.
+     * @param currentUserId The ID of the current user, to exclude their own status.
+     */
+    override fun listenToTypingStatus(roomId: String, currentUserId: String): Flow<List<TypingStatus>> = callbackFlow {
+        val typingRef = db.collection("typing")
+            .document(roomId)
+            .collection("users")
+
+        val subscription = typingRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+
+            if (snapshot != null) {
+                val typingUsers = snapshot.documents.mapNotNull { doc ->
+                    // Filter out the current user's own status
+                    if (doc.id != currentUserId) {
+                        // Create a new TypingStatus object and pass the userId
+                        val status = doc.toObject(TypingStatus::class.java)?.copy(userId = doc.id)
+                        status
+                    } else {
+                        null
+                    }
+                }.filter { it.isTyping } // A good practice to filter only for active typers
+
+                trySend(typingUsers)
+            }
+        }
+
         awaitClose {
             subscription.remove()
         }

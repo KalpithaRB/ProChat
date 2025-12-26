@@ -40,7 +40,12 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Attachment
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatViewModel
@@ -63,11 +68,16 @@ private const val MAX_MESSAGE_LENGTH = 300
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatInput(
+    textState: TextFieldValue,
+    onTextChange: (TextFieldValue) -> Unit,
     onSendMessage: (String) -> Unit,
     onSendImageMessage: (Uri) -> Unit,
+    onSendFileMessage: (Uri) -> Unit,
+    onStartAudioRecording: () -> Unit,
+    onStopAudioRecording: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var textState by remember { mutableStateOf(TextFieldValue("")) }
+//    var textState by remember { mutableStateOf(TextFieldValue("")) }
     val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -90,6 +100,29 @@ fun ChatInput(
             }
         } ?: run {
             Log.d("ChatInput", "No image selected or image picker cancelled.")
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            Log.d("ChatInput", "File URI selected: $selectedUri")
+            val fileSize = getFileSizeFromUri(context, selectedUri)
+            Log.d("ChatInput", "Selected file URI: $selectedUri, Size: $fileSize bytes")
+
+            if (fileSize == -1L) {
+                Log.w("ChatInput", "Could not determine file size for $selectedUri.")
+                Toast.makeText(context, "Could not determine file size.", Toast.LENGTH_SHORT).show()
+            } else if (fileSize > MAX_FILE_SIZE_BYTES) {
+                Log.w("ChatInput", "File $selectedUri is too large: $fileSize bytes. Max allowed: $MAX_FILE_SIZE_BYTES bytes.")
+                Toast.makeText(context, "File is too large (max 5MB). Please select a smaller one.", Toast.LENGTH_LONG).show()
+            } else {
+                Log.d("ChatInput", "File size OK. Calling ViewModel to prepare and send.")
+                onSendFileMessage(selectedUri)
+            }
+        } ?: run {
+            Log.d("ChatInput", "No file selected or file picker cancelled.")
         }
     }
 
@@ -116,6 +149,16 @@ fun ChatInput(
                 )
             }
 
+            IconButton(onClick = {
+                filePickerLauncher.launch("*/*")
+            }) {
+                Icon(
+                    imageVector = Icons.Filled.Attachment,
+                    contentDescription = "Attach File",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Spacer(modifier = Modifier.width(8.dp)) // Add some space between icon and text field
 
             // Column for TextField and Character Counter
@@ -125,12 +168,10 @@ fun ChatInput(
                 OutlinedTextField(
                     value = textState,
                     onValueChange = {
-                        // Only update textState if the new text is within the limit or being deleted
                         if (it.text.length <= MAX_MESSAGE_LENGTH) {
-                            textState = it
+                            onTextChange(it)
                         } else if (it.text.length < textState.text.length) {
-                            // Allow deletion even if over limit (though it shouldn't get there with the check)
-                            textState = it
+                            onTextChange(it)
                         }
                     },
                     placeholder = { Text("Type a message...") },
@@ -149,7 +190,7 @@ fun ChatInput(
                         onSend = {
                             if (isSendEnabled) {
                                 onSendMessage(textState.text)
-                                textState = TextFieldValue("")
+                                onTextChange(TextFieldValue(""))
                             }
                         }
                     )
@@ -167,21 +208,51 @@ fun ChatInput(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Send Button
-            IconButton(
-                onClick = {
-                    if (isSendEnabled) {
-                        onSendMessage(textState.text)
-                        textState = TextFieldValue("")
+            if (textState.text.isNotBlank()) {
+                // Show the SEND button if there's text
+                IconButton(
+                    onClick = {
+                        if (isSendEnabled) {
+                            onSendMessage(textState.text)
+                            onTextChange(TextFieldValue(""))
+                        }
+                    },
+                    enabled = isSendEnabled
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send message",
+                        tint = if (isSendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
+            } else {
+                // Show the MICROPHONE button if the text field is empty
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by interactionSource.collectIsPressedAsState()
+
+                LaunchedEffect(isPressed) {
+                    if (isPressed) {
+                        onStartAudioRecording()
+                    } else {
+                        onStopAudioRecording()
                     }
-                },
-                enabled = isSendEnabled
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send message",
-                    tint = if (isSendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) // Standard disabled tint
-                )
+                }
+
+                IconButton(
+                    onClick = {},
+                    modifier = Modifier.combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = { /* No action on short click */ },
+                        onLongClick = {} // Trigger long press gesture
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Mic,
+                        contentDescription = "Record Audio",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
     }

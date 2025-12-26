@@ -1,6 +1,7 @@
 package com.kalpi.prochat.ui.presentations.screens
 
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -30,6 +32,8 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.HorizontalDivider
@@ -44,6 +48,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
+import com.kalpi.prochat.data.model.ChatRoom
+import com.kalpi.prochat.data.model.UiChatRoom
+import com.kalpi.prochat.data.model.User
+import com.kalpi.prochat.data.repository.UserRepository
 import kotlinx.coroutines.flow.collectLatest
 import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListViewModel
 import com.kalpi.prochat.ui.presentations.ChatRoomListItem
@@ -54,12 +62,14 @@ import com.kalpi.prochat.ui.presentations.viewmodel.ChatRoomListUiState
 @Composable
 fun ChatRoomListScreen(
     chatRoomListViewModel: ChatRoomListViewModel,
+    userRepository: UserRepository,
     onRoomClicked: (String, String) -> Unit
 ) {
     val uiState by chatRoomListViewModel.uiState.collectAsState()
     var showCreateRoomDialog by remember { mutableStateOf(false) }
     var showJoinRoomDialog by remember { mutableStateOf(false) }
     var isFabMenuExpanded by remember { mutableStateOf(false) }
+    var isGroupChat by remember { mutableStateOf(false) }
     var newRoomName by remember { mutableStateOf("") }
     var newRecipientId by remember { mutableStateOf("") }
     var joinRoomId by remember { mutableStateOf("") }
@@ -67,14 +77,31 @@ fun ChatRoomListScreen(
     var sharedRoomId by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var selectedUserIds by remember { mutableStateOf(emptySet<String>()) }
 
-    // NEW LaunchedEffect to listen for one-time events from the ViewModel
+
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var roomToDelete by remember { mutableStateOf<UiChatRoom?>(null) }
+
+
+
+    // LaunchedEffect to listen for one-time events from the ViewModel
     LaunchedEffect(key1 = Unit) {
         chatRoomListViewModel.uiEvent.collectLatest { event ->
             when (event) {
                 is ChatRoomListViewModel.UiEvent.RoomCreated -> {
-                    sharedRoomId = event.roomId
+                    // This event is now handled by the RoomCreatedAndNavigate event, so we can leave this block empty.
+                }
+                is ChatRoomListViewModel.UiEvent.RoomCreatedAndNavigate -> {
+                    // This event is received only after the room is successfully created in the ViewModel.
+                    // This is the correct place to handle navigation and state updates.
+                    onRoomClicked(event.roomId, event.roomName)
+                    sharedRoomId = event.roomId // For showing the share dialog
                     showShareRoomIdDialog = true
+                    showCreateRoomDialog = false // ✨ Correctly dismiss the dialog here!
+                    newRoomName = ""
+                    selectedUserIds = emptySet()
+                    isGroupChat = false
                 }
                 is ChatRoomListViewModel.UiEvent.RoomJoined -> {
                     // TODO: We need to get the room name here to navigate correctly
@@ -184,11 +211,34 @@ fun ChatRoomListScreen(
                             contentPadding = PaddingValues(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(1.dp)
                         ) {
-                            items(items = state.chatRooms, key = { it.roomId }) { chatRoom ->
+                            items(items = state.chatRooms,
+                                key = { chatRoom ->
+                                    // ✨ The definitive fix: Use a non-empty, unique key.
+                                    // This prevents the crash if roomId is null or empty.
+                                    if (chatRoom.documentId.isNotBlank()) {
+                                        chatRoom.documentId
+                                    } else {
+                                        chatRoom.hashCode().toString()
+                                    }
+                                }
+                            ) { chatRoom ->
                                 val dismissState = rememberSwipeToDismissBoxState(
-                                    confirmValueChange = {
-                                        // We're not implementing the logic now, so we always return false
-                                        it != SwipeToDismissBoxValue.Settled
+                                    confirmValueChange = {dismissValue ->
+                                        when (dismissValue) {
+                                            // When the user swipes from start to end (left to right)
+                                            SwipeToDismissBoxValue.StartToEnd -> {
+                                                // Call the ViewModel function to soft delete the chatroom
+                                                chatRoomListViewModel.deleteChatroom(chatRoom.documentId)
+                                                true // Allow the dismissal animation to complete
+                                            }
+                                            // When the user swipes from end to start (right to left)
+                                            SwipeToDismissBoxValue.EndToStart -> {
+                                                // For now, we won't implement an archive function, so we block this swipe
+                                                false // Do not allow the dismissal
+                                            }
+                                            // When the item settles back in place
+                                            SwipeToDismissBoxValue.Settled -> false
+                                        }
                                     }
                                 )
                                 SwipeToDismissBox(
@@ -233,19 +283,78 @@ fun ChatRoomListScreen(
                                             }
                                         }
                                     },
-                                    // The 'content' parameter name was correct, but I'll add the corrected block here for clarity
                                     content = {
-                                        ChatRoomListItem(
-                                            chatRoom = chatRoom,
-                                            onRoomClicked = { roomId, roomName ->
-                                                chatRoomListViewModel.onRoomClicked(roomId)
-                                                onRoomClicked(roomId, roomName)
-                                            },
-                                            // NEW: Pass the ViewModel function to the list item
-                                            onToggleMuteClicked = { roomId ->
-                                                chatRoomListViewModel.onToggleMute(roomId)
+                                        // This Row will contain your existing chat room item and the new menu button
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    // 🌟 The definitive fix for this crash
+                                                    if (chatRoom.documentId.isNotBlank()) {
+                                                        onRoomClicked(chatRoom.documentId, chatRoom.title)
+                                                    } else {
+                                                        // Log an error or show a Toast message here
+                                                        Log.e("ChatRoomListScreen", "Attempted to click on a chat room with a blank ID: ${chatRoom.title}")
+                                                    }
+                                                }
+                                                .background(MaterialTheme.colorScheme.surface)
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // This is your ChatRoomListItem's content, but we'll put it directly here
+                                            Column(
+                                                modifier = Modifier.weight(1f) // This makes the Column take up all available space
+                                            ) {Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(chatRoom.title, style = MaterialTheme.typography.titleMedium)
+                                                if (chatRoom.muted) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.NotificationsOff,
+                                                        contentDescription = "Muted",
+                                                        modifier = Modifier.size(20.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                                    )
+                                                }
                                             }
-                                        )
+                                                Text(chatRoom.title, style = MaterialTheme.typography.titleMedium)
+                                                chatRoom.lastMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                                            }
+
+                                            // Three-dot menu button
+                                            Box {
+                                                var showMenu by remember { mutableStateOf(false) }
+
+                                                IconButton(onClick = { showMenu = true }) {
+                                                    Icon(Icons.Default.MoreVert, contentDescription = "Room Options")
+                                                }
+
+                                                DropdownMenu(
+                                                    expanded = showMenu,
+                                                    onDismissRequest = { showMenu = false }
+                                                ) {
+                                                    // Toggle Mute Menu Item
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            val text = if (chatRoom.muted) "Unmute Chat" else "Mute Chat"
+                                                            Text(text)
+                                                        },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            chatRoomListViewModel.onToggleMute(chatRoom.documentId)
+                                                        }
+                                                    )
+                                                    // Delete Chatroom Menu Item
+                                                    DropdownMenuItem(
+                                                        text = { Text("Delete Chatroom") },
+                                                        onClick = {
+                                                            showMenu = false
+                                                            roomToDelete = chatRoom
+                                                            showDeleteDialog = true
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 )
                                 HorizontalDivider(
@@ -262,9 +371,26 @@ fun ChatRoomListScreen(
 
 
     if (showCreateRoomDialog) {
+        var users by remember { mutableStateOf<List<User>>(emptyList()) }
+        var selectedUserIds by remember { mutableStateOf(emptySet<String>()) }
+        var isLoadingUsers by remember { mutableStateOf(true) }
+
+        // Fetch users once when the dialog is shown
+        LaunchedEffect(Unit) {
+            isLoadingUsers = true
+            val fetchedUsers = userRepository.getUsers()
+            users = fetchedUsers
+            isLoadingUsers = false
+        }
+
         AlertDialog(
-            onDismissRequest = { showCreateRoomDialog = false },
-            title = { Text("Create New Room") },
+            onDismissRequest = {
+                showCreateRoomDialog = false
+                newRoomName = ""
+                isGroupChat = false
+                selectedUserIds = emptySet()
+            },
+            title = { Text(if (isGroupChat) "Create Group Chat" else "Create Direct Message") },
             text = {
                 Column {
                     OutlinedTextField(
@@ -274,23 +400,78 @@ fun ChatRoomListScreen(
                         singleLine = true,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    OutlinedTextField(
-                        value = newRecipientId,
-                        onValueChange = { newRecipientId = it },
-                        label = { Text("Recipient User ID") },
-                        singleLine = true
-                    )
+
+                    // User selection UI
+                    if (isLoadingUsers) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (users.isEmpty()) {
+                        Text("No other users found.")
+                    } else {
+                        Text("Select Users:", style = MaterialTheme.typography.labelLarge)
+                        LazyColumn(
+                            modifier = Modifier
+                                .heightIn(max = 200.dp)
+                                .padding(top = 8.dp)
+                        ) {
+                            items(users,
+                                key = { user -> user.userId }
+                            ) { user ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedUserIds = if (selectedUserIds.contains(user.userId)) {
+                                                selectedUserIds - user.userId
+                                            } else {
+                                                selectedUserIds + user.userId
+                                            }
+                                        }
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = selectedUserIds.contains(user.userId),
+                                        onCheckedChange = { isChecked ->
+                                            selectedUserIds = if (isChecked) {
+                                                selectedUserIds + user.userId
+                                            } else {
+                                                selectedUserIds - user.userId
+                                            }
+                                        }
+                                    )
+                                    Text(
+                                        text = user.name,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isGroupChat,
+                            onCheckedChange = { isGroupChat = it }
+                        )
+                        Text("Create as Group Chat")
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
+                    // ✨ CORRECTED: ONLY call the ViewModel function.
+                    // DO NOT dismiss the dialog or reset state here.
                     onClick = {
-                        chatRoomListViewModel.createNewRoom(newRoomName, newRecipientId)
-                        showCreateRoomDialog = false
-                        newRoomName = ""
-                        newRecipientId = ""
+                        chatRoomListViewModel.createNewRoom(
+                            roomName = newRoomName,
+                            recipientIds = selectedUserIds.toList(),
+                            isGroupChat = isGroupChat
+                        )
                     },
-                    enabled = newRoomName.isNotBlank() && newRecipientId.isNotBlank()
+                    enabled = newRoomName.isNotBlank() && selectedUserIds.isNotEmpty()
                 ) {
                     Text("Create")
                 }
@@ -299,7 +480,8 @@ fun ChatRoomListScreen(
                 TextButton(onClick = {
                     showCreateRoomDialog = false
                     newRoomName = ""
-                    newRecipientId = ""
+                    selectedUserIds = emptySet()
+                    isGroupChat = false
                 }) {
                     Text("Cancel")
                 }
@@ -368,6 +550,39 @@ fun ChatRoomListScreen(
                     }
                 ) {
                     Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showDeleteDialog && roomToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                roomToDelete = null
+            },
+            title = { Text("Delete Chatroom") },
+            text = { Text("Are you sure you want to delete '${roomToDelete?.title}'? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Call the new ViewModel function
+                        chatRoomListViewModel.deleteChatroom(roomToDelete!!.documentId)
+                        showDeleteDialog = false
+                        roomToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        roomToDelete = null
+                    }
+                ) {
+                    Text("Cancel")
                 }
             }
         )

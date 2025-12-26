@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kalpi.prochat.data.model.ChatRoom
 import com.kalpi.prochat.data.repository.ChatRoomRepository
+import com.kalpi.prochat.data.repository.UserRepository
+import com.kalpi.prochat.data.repository.PresenceRepository // You need to import this
+import com.kalpi.prochat.data.model.Member
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -13,40 +16,112 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import android.util.Log
+import com.kalpi.prochat.data.model.FullChatMember
+import com.kalpi.prochat.data.model.UiChatRoom
+import com.kalpi.prochat.data.model.User
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 
 // Sealed class to represent the UI state of the chatroom list
 sealed class ChatRoomListUiState {
     object Loading : ChatRoomListUiState()
-    data class Content(val chatRooms: List<ChatRoom>) : ChatRoomListUiState()
+    data class Content(val chatRooms: List<UiChatRoom>) : ChatRoomListUiState()
     data class Error(val errorMessage: String) : ChatRoomListUiState()
 }
 
 class ChatRoomListViewModel(
     private val chatRoomRepository: ChatRoomRepository,
+    private val userRepository: UserRepository,
+    private val presenceRepository: PresenceRepository,
     private val currentUserId: String
 ) : ViewModel() {
 
+    // 1. A flow that provides the base list of raw chat rooms (from Firestore)
+    private val rawChatRoomsFlow = chatRoomRepository.listenToChatRooms(currentUserId)
+
+    // A helper flow that extracts all unique participant IDs (as Strings)
+    private val allParticipantIdsFlow = rawChatRoomsFlow
+        .map { chatRooms -> chatRooms.flatMap { it.participants }.distinct() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 2. A flow that provides a real-time map of user IDs to their User details
+    private val usersMapFlow = allParticipantIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else userRepository.listenToUsers(ids)
+    }
+
+    // 3. A flow that provides a real-time map of user IDs to their last active timestamp
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val presenceMapFlow = allParticipantIdsFlow.flatMapLatest { ids ->
+        if (ids.isEmpty()) flowOf(emptyMap())
+        else presenceRepository.listenToPresence(ids)
+    }
+
+    // The single, unified UI state flow that combines all data streams
     val uiState: StateFlow<ChatRoomListUiState> =
-        flow {
-            emit(ChatRoomListUiState.Loading)
-            try {
-                chatRoomRepository.listenToChatRooms(currentUserId)
-                    .collect { chatRooms ->
-                        emit(ChatRoomListUiState.Content(chatRooms))
+        combine(
+            rawChatRoomsFlow,
+            usersMapFlow,
+            presenceMapFlow
+        ) { rawChatRooms, usersMap, presenceMap ->
+
+            val validRawChatRooms = rawChatRooms.filter { it.documentId.isNotBlank() }
+
+            // Now, we'll transform the raw data into our UI-specific model
+            val uiChatRooms = validRawChatRooms.map { rawRoom ->
+                val uiParticipants = rawRoom.participants.mapNotNull { userId ->
+                    val user = usersMap[userId]
+                    val lastActiveAt = presenceMap[userId]
+                    if (user != null) {
+                        FullChatMember(
+                            userId = userId,
+                            name = user.name,
+                            lastActiveAt = lastActiveAt
+                        )
+                    } else {
+                        null // Filter out participants with no user data
                     }
-            } catch (e: Exception) {
-                Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
-                emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
+                }
+
+                // Construct the UI-specific ChatRoom object
+                UiChatRoom(
+                    documentId = rawRoom.documentId,
+                    title = rawRoom.title,
+                    participants = uiParticipants,
+                    lastMessage = rawRoom.lastMessage,
+                    lastTimestamp = rawRoom.lastTimestamp,
+                    unreadCount = rawRoom.unreadCount,
+                    muted = rawRoom.muted
+                )
             }
+            ChatRoomListUiState.Content(uiChatRooms)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = ChatRoomListUiState.Loading
         )
+//    val uiState: StateFlow<ChatRoomListUiState> =
+//        flow {
+//            emit(ChatRoomListUiState.Loading)
+//            try {
+//                chatRoomRepository.listenToChatRooms(currentUserId)
+//                    .collect { chatRooms ->
+//                        emit(ChatRoomListUiState.Content(chatRooms))
+//                    }
+//            } catch (e: Exception) {
+//                Log.e("ChatRoomListViewModel", "Error fetching chat rooms", e)
+//                emit(ChatRoomListUiState.Error(e.message ?: "Unknown error"))
+//            }
+//        }.stateIn(
+//            scope = viewModelScope,
+//            started = SharingStarted.WhileSubscribed(5000),
+//            initialValue = ChatRoomListUiState.Loading
+//        )
 
 
-    // NEW: SharedFlow to send one-time UI events (like showing a dialog)
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
 
@@ -54,11 +129,12 @@ class ChatRoomListViewModel(
         data class RoomCreated(val roomId: String) : UiEvent()
         data class RoomJoined(val roomId: String) : UiEvent()
         data class ShowToast(val message: String) : UiEvent()
+        data class RoomCreatedAndNavigate(val roomId: String, val roomName: String) : UiEvent()
     }
 
 
     /**
-     * Public function for the UI to call to mark a room as read.
+     * Public function for the UI to call to mark a room as read. but not in use now
      */
     fun onRoomClicked(roomId: String) {
         viewModelScope.launch {
@@ -67,24 +143,49 @@ class ChatRoomListViewModel(
     }
 
     /**
-     * Creates a new chat room with the given name and recipient ID.
+     * Creates a new chat room.
+     * This function now uses either createDirectChatRoom or createGroupChatRoom
+     * based on the isGroupChat parameter.
      */
-    fun createNewRoom(roomName: String, recipientId: String) {
+    fun createNewRoom(roomName: String, recipientIds: List<String>, isGroupChat: Boolean) {
         viewModelScope.launch {
-            if (recipientId.isNotBlank() && recipientId != currentUserId) {
-                val participantIds = listOf(currentUserId, recipientId)
-                chatRoomRepository.createChatRoom(roomName, participantIds)
-                    .onSuccess { newRoomId ->
-                        Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
-                        // NEW: Emit the event to the UI
-                        _uiEvent.emit(UiEvent.RoomCreated(newRoomId))
-                    }.onFailure {
-                        Log.e("ChatRoomListViewModel", "Failed to create new room", it)
-                        _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))
-                    }
+            // Check if there are any valid recipients
+            if (recipientIds.isEmpty()) {
+                _uiEvent.emit(UiEvent.ShowToast("Please select at least one recipient."))
+                return@launch
+            }
+
+            // Combine the current user's ID with the selected recipients
+            val participantIds = (recipientIds + currentUserId).distinct()
+
+            // You should validate each recipient ID here.
+            // It's more efficient to do this once before the repository call.
+            // For simplicity, we will skip the `userRepository.getUserById` for now,
+            // as the backend handles the ultimate validation.
+
+            // Corrected logic: Call the specific repository function based on isGroupChat
+            val result = if (isGroupChat) {
+                // Check for a minimum of 3 participants (current user + 2 others) for a group.
+                if (participantIds.size < 3) {
+                    _uiEvent.emit(UiEvent.ShowToast("Group chats require at least 2 other members."))
+                    return@launch
+                }
+                chatRoomRepository.createGroupChatRoom(roomName, participantIds, currentUserId)
             } else {
-                Log.e("ChatRoomListViewModel", "Invalid recipient ID or self-chat attempt.")
-                _uiEvent.emit(UiEvent.ShowToast("Please enter a valid recipient ID."))
+                // For a direct message, we must have exactly 2 participants
+                if (participantIds.size != 2) {
+                    _uiEvent.emit(UiEvent.ShowToast("Direct messages require one recipient."))
+                    return@launch
+                }
+                chatRoomRepository.createDirectChatRoom(roomName, participantIds)
+            }
+
+            result.onSuccess { newRoomId ->
+                Log.d("ChatRoomListViewModel", "New room created with ID: $newRoomId")
+                _uiEvent.emit(UiEvent.RoomCreatedAndNavigate(newRoomId, roomName))
+            }.onFailure {
+                Log.e("ChatRoomListViewModel", "Failed to create new room", it)
+                _uiEvent.emit(UiEvent.ShowToast("Failed to create room. Please try again."))
             }
         }
     }
@@ -116,14 +217,49 @@ class ChatRoomListViewModel(
 
     fun onToggleMute(roomId: String) {
         viewModelScope.launch {
-            // We get the current list of rooms from the UI state
-            val currentRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
+            // Find the chatroom from the current UI state
+            val chatRooms = (uiState.value as? ChatRoomListUiState.Content)?.chatRooms ?: return@launch
+            val chatRoomToUpdate = chatRooms.firstOrNull { it.documentId == roomId } ?: return@launch
+            val newIsMutedState = !chatRoomToUpdate.muted // Assuming the field is named `muted`
 
-            // Find the specific room the user clicked on
-            val chatRoomToMute = currentRooms.find { it.roomId == roomId } ?: return@launch
+            // CORRECTED: Pass all three arguments to the repository function
+            chatRoomRepository.toggleMuteStatus(
+                userId = currentUserId, // This is the missing argument
+                roomId = roomId,
+                isMuted = newIsMutedState
+            )
 
-            // Pass the userId to the repository function
-            chatRoomRepository.toggleMuteStatus(uniqueUserId, roomId, !chatRoomToMute.muted)
+            // Determine the toast message based on the new state
+            val message = if (newIsMutedState) {
+                "${chatRoomToUpdate.title} is muted."
+            } else {
+                "${chatRoomToUpdate.title} is unmuted."
+            }
+
+            // Emit a UiEvent to show the toast
+            _uiEvent.emit(UiEvent.ShowToast(message))
         }
     }
+
+    fun deleteChatroom(roomId: String) {
+        viewModelScope.launch {
+            // You can get the current user ID from the constructor, a repository, or FirebaseAuth.
+            // For example, if you have `private val currentUserId: String` in the constructor:
+            // Or if you get it from auth: val userId = auth.currentUser?.uid ?: return@launch
+
+            chatRoomRepository.softDeleteChatroom(roomId, currentUserId).fold(
+                onSuccess = {
+                    // The UI will automatically update due to the real-time listener
+                    // Show a success message to the user
+                    _uiEvent.emit(UiEvent.ShowToast("Chatroom deleted successfully."))
+                },
+                onFailure = { e ->
+                    // Show an error message to the user
+                    _uiEvent.emit(UiEvent.ShowToast("Failed to delete chatroom: ${e.message}"))
+                }
+            )
+        }
+    }
+
+
 }
